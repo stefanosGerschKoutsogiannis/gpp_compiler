@@ -15,3 +15,8 @@ Ensure you have **Python 3** installed:
 
 ```sh
 python3 --version
+
+## Usage
+
+```sh
+python3 compiler.py <your_file_name.gpp>
