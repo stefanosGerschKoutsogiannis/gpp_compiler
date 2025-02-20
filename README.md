@@ -17,8 +17,17 @@ Ensure you have **Python 3** installed:
 python3 --version
 ```
 
-## Usage
+Clone the repository
 
 ```sh
-python3 compiler.py <your_file_name.gpp>
+git clone https://github.com/<yourusername>/gpp-compiler.git
+cd gpp-compiler
+```
+
+## Usage
+
+After cloning the repository, navigate to the project folder and run:
+
+```sh
+python3 compiler.py <source_file.gpp>
 ```
