@@ -328,6 +328,7 @@ class Parser:
             self.funcinput()
             self.funcoutput()
             self.declarations()
+            self.subprograms()
             if token.recognized_string == "αρχή_συνάρτησης":
                 token = self.get_token()
                 self.sequence()
@@ -341,6 +342,7 @@ class Parser:
             self.funcinput()
             self.funcoutput()
             self.declarations()
+            self.subprograms()
             if token.recognized_string == "αρχή_διαδικασίας":
                 token = self.get_token()
                 self.sequence()
@@ -630,7 +632,7 @@ class Parser:
 #Usage: type in terminal python3 compiler.py your_file_name
 if __name__ == "__main__":
 
-    file = sys.argv[1]
+    file = "test.gpp"
     lex: Lex = Lex(file)
     parser: Parser = Parser(lex)
     parser.syntax_analyzer()
