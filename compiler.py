@@ -30,7 +30,6 @@ BY_REFERENCE_OPERATOR = "%"
 
 class Token:
 
-    # properties: recognized_string, family, line_number
     def __init__(self, recognized_string: str, family: str, line_number: int) -> None:
         self.recognized_string = recognized_string
         self.family = family
@@ -41,7 +40,6 @@ class Token:
 
 class Lex:
 
-    #properties: current_line: int, file_name: string, token: Token, file: TextIOWrapper
     def __init__(self, file_name:string) -> None:
         self.current_line = 1
         self.file_name = file_name
@@ -53,7 +51,6 @@ class Lex:
         recognized_token: str = ""
         character: chr = self.__read_character()
 
-
         while character == "\n":
             self.current_line += 1
             character = self.__read_character()
@@ -63,15 +60,13 @@ class Lex:
 
         recognized_token += character
 
-        # για τελος etc
         if recognized_token in LETTERS:
             character = self.__read_character()
 
             while character in LETTERS or character in DIGITS or character == "_":
                 recognized_token += character
                 if len(recognized_token) > 30:
-                    print(f"LengthError: Token {recognized_token} in line {self.current_line} exceeds maximum length")
-                    exit()
+                    self.__error("InvalidLengthError", f"Identifier {recognized_token} exceeds maximum supported length of 30 characters")
                 character = self.__read_character()
 
             if character not in LETTERS and character not in DIGITS and character != "_":
@@ -90,35 +85,15 @@ class Lex:
                 recognized_token += character
                 # add bound
                 if int(recognized_token) > 10000:
-                    print("Error")
-                    exit()
+                    self.__error("NumberOutOfRangeError", f"{recognized_token} exceeds maximum number supported")
                 character = self.__read_character()
                 if character in LETTERS:
-                    print(f"InvalidNumberError: {recognized_token} in line {self.current_line} is not a valid number")
-                    exit()
+                    self.__error("InvalidNumberError", f"{recognized_token} is not a valid number")
             self.__move_fp_back()
             self.token = self.__create_token(recognized_token, "digit")
             return self.token
             
         elif recognized_token in ADD_OPERATORS:
-            """
-            character = self.__read_character()
-            if character in DIGITS:
-                character = self.__read_character()
-                while character in DIGITS:
-                    recognized_token += character
-                    if int(recognized_token) > 10000:
-                        print("Error")
-                        exit()
-                    character = self.__read_character()
-                    if character in LETTERS:
-                        print("Error")
-                        exit()
-            else:
-                self.__move_fp_back()
-                self.token = self.__create_token(recognized_token, "addOper")
-                return self.token
-            """
             self.token = self.__create_token(recognized_token, "addOper")
             return self.token
 
@@ -133,10 +108,8 @@ class Lex:
                 recognized_token += character
                 self.token = self.__create_token(recognized_token, "assignment")
                 return self.token
-            #elif character in DELIMETERS:
-                #self.__move_fp_back()
             else:
-                print(f"InvalidTokenError: Token {recognized_token} in line {self.current_line} is not used properly")
+                self.__error("InvalidTokenError", f"Token {recognized_token} is not used properly")
                 exit()
 
         elif recognized_token in RELATIONAL_SYMBOLS:
@@ -166,8 +139,7 @@ class Lex:
             while character != "}":
                 character = self.__read_character()
                 if not character:   #eof
-                    print("UnclosedCommentError: ")
-                    exit()
+                    self.__error("UnclosedCommentsError", f"Comment block is not closed")
                 elif character == "\n":
                     self.current_line += 1
             self.token = self.next_token()
@@ -185,8 +157,7 @@ class Lex:
             return ''
 
         else:
-            print(f"InvalidCharacterError: Character {recognized_token} in line {self.current_line} is not supported")
-            exit()
+            self.__error("InvalidCharacterError", f"Character {recognized_token} is not supported")
     
     def __read_character(self) -> chr:
         return self.file.read(1)
@@ -196,6 +167,10 @@ class Lex:
     
     def __move_fp_back(self) -> None:
         self.file.seek(self.file.tell() - 1)
+
+    def __error(self, error_type, msg):
+        print(f"{error_type} ({self.current_line}): {msg}")
+        exit(-1)
 
 class Parser:
 
@@ -218,11 +193,9 @@ class Parser:
                 token = self.get_token()
                 self.programblock()
             else:
-                print(f"Error in line {self.lex.current_line}, file: 223")
-                exit()
+                self.__error("SyntaxError", "Expected an identifier after 'πρόγραμμα' keyword, got {token}")
         else:
-            print(f"Error in line {self.lex.current_line}, file: 226")
-            exit()
+            self.__error("SyntaxError", "Program should start with 'πρόγραμμα' keyword, instead got {token}")
 
 
     def programblock(self) -> None:
@@ -233,14 +206,12 @@ class Parser:
             token = self.get_token()
             self.sequence()
             if token.recognized_string == "τέλος_προγράμματος":
-                token = self.get_token()
+                #token = self.get_token()
                 print("Success")
             else:
-                print("Error 209")
-                exit()
+                self.__error("SyntaxError", "The program block is not closed, expected 'τέλος_προγράμματος', got {token}")
         else:
-            print("Error 212")
-            exit()
+            self.__error("SyntaxError", "No program block in the source file {self.lex.file}")
 
 
     def declarations(self) -> None:
@@ -461,28 +432,23 @@ class Parser:
                         if token.recognized_string == "για_τέλος":
                             token = self.get_token()
                         else:
-                            print("Error")
-                            exit()
+                            self.__error("SyntaxError", f"Expected 'για_τέλος' at the end of 'για' loop, got {token}")
                     else:
-                        print("Error")
-                        exit()
+                        self.__error("SyntaxError", f"Expected 'επανάλαβε' in 'για' loop, got {token}")
                 else:
-                    print("Error")
-                    exit()
+                    self.__error("SyntaxError", f"Expected 'έως' in 'για' loop, got {token}")
             else:
-                print("Error")
-                exit()
+                self.__error("SyntaxError", f"Expected ':=' after loop variable in 'για' statement, got {token}")
         else:
-            print("Error")
-            exit()
+            self.__error("SyntaxError", f"Expected an identifier for loop variable in 'για' statement, got {token}")
+
 
     def input_stat(self) -> None:
         global token
         if token.family == "identifier":
             token = self.get_token()
         else:
-            print("Error")
-            exit()
+            self.__error("SyntaxError", f"Expected an identifier after 'διάβασε' statement, got {token}")
 
     def print_stat(self) -> None:
         global token
@@ -629,10 +595,15 @@ class Parser:
     def get_token(self) -> Token:
         return self.lex.next_token()
     
+    def __error(self, error_type, msg):
+        print(f"{error_type} ({self.lex.current_line}): {msg}")
+        exit(-1)
+    
 #Usage: type in terminal python3 compiler.py your_file_name
 if __name__ == "__main__":
 
-    file = "test.gpp"
+    #file = "test.gpp"
+    file = sys.argv[1]
     lex: Lex = Lex(file)
     parser: Parser = Parser(lex)
     parser.syntax_analyzer()
