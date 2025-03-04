@@ -1,3 +1,6 @@
+#Stefanos Gersch-Koutsogiannis 5046
+#Filippos Alexiou 5146
+
 import string
 import sys
 
@@ -110,7 +113,6 @@ class Lex:
                 return self.token
             else:
                 self.__error("InvalidTokenError", f"Token {recognized_token} is not used properly")
-                exit()
 
         elif recognized_token in RELATIONAL_SYMBOLS:
             character = self.__read_character()
@@ -206,8 +208,7 @@ class Parser:
             token = self.get_token()
             self.sequence()
             if token.recognized_string == "τέλος_προγράμματος":
-                #token = self.get_token()
-                print("Success")
+                self.__success_exit()
             else:
                 self.__error("SyntaxError", f"The program block is not closed, expected 'τέλος_προγράμματος', got {token}")
         else:
@@ -619,6 +620,9 @@ class Parser:
     def __error(self, error_type, msg):
         print(f"{error_type} ({self.lex.current_line}): {msg}")
         exit(-1)
+
+    def __success_exit(self):
+        exit(1)
     
 #Usage: type in terminal python3 compiler.py your_file_name
 if __name__ == "__main__":
