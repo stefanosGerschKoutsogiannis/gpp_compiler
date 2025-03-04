@@ -18,7 +18,7 @@ LOGICAL_OPERATORS = ["και", "ή"]
 ENGLISH_LETTERS = list(string.ascii_letters)
 GREEK_LETTERS = [chr(code) for code in range(0x03B1, 0x03C9 + 1)] + [chr(code) for code in range(0x0391, 0x03A9 + 1)]
 DIGITS = list(string.digits)
-GREEK_PUNCTUATIONS = ['ά', 'ό', 'ί', 'έ', 'ή', 'ύ']
+GREEK_PUNCTUATIONS = ['ά', 'ό', 'ί', 'έ', 'ή', 'ύ', 'ώ']
 GROUP_SYMBOLS = ["(", ")", "[", "]"]
 RELATIONAL_SYMBOLS = ["=", "<", ">", "<>", "<=", ">="]
 
@@ -193,9 +193,9 @@ class Parser:
                 token = self.get_token()
                 self.programblock()
             else:
-                self.__error("SyntaxError", "Expected an identifier after 'πρόγραμμα' keyword, got {token}")
+                self.__error("SyntaxError", "Expected an identifier after 'πρόγραμμα' keyword, instead got {token.recognized_string}")
         else:
-            self.__error("SyntaxError", "Program should start with 'πρόγραμμα' keyword, instead got {token}")
+            self.__error("SyntaxError", "Program should start with 'πρόγραμμα' keyword, instead got {token.recognized_string}")
 
 
     def programblock(self) -> None:
@@ -209,9 +209,9 @@ class Parser:
                 #token = self.get_token()
                 print("Success")
             else:
-                self.__error("SyntaxError", "The program block is not closed, expected 'τέλος_προγράμματος', got {token}")
+                self.__error("SyntaxError", f"The program block is not closed, expected 'τέλος_προγράμματος', got {token}")
         else:
-            self.__error("SyntaxError", "No program block in the source file {self.lex.file}")
+            self.__error("SyntaxError", f"No program block in the source file {self.lex.file}")
 
 
     def declarations(self) -> None:
@@ -229,11 +229,7 @@ class Parser:
                 if token.family == "identifier":
                     token = self.get_token()
                 else:
-                    print("Error 231")
-                    exit()
-        else:
-            print("Error 234")
-            exit()
+                    self.__error("SyntaxError", f"Expected an identifier, instead got {token.recognized_string}")
 
     def subprograms(self) -> None:
         global token
@@ -245,7 +241,7 @@ class Parser:
                 token = self.get_token()
                 self.proc()
             else:
-                break
+                self.__error("SyntaxError", f"No subprograms declared in program")
             
     def func(self) -> None:
         global token
@@ -258,14 +254,11 @@ class Parser:
                     token = self.get_token()
                     self.funcblock()
                 else:
-                    print("Error 261")
-                    exit()
+                    self.__error("SyntaxError", f"Function parameter list is not closed, instead got {token.recognized_string}")
             else:
-                print("Error 264")
-                exit()
+                self.__error("SyntaxError", f"Function parameter list is missing, instead got {token.recognized_string}")
         else:
-            print("Error 267")
-            exit()
+            self.__error("SyntaxError", f"Function should be named after an identifier, instead got {token.recognized_string}")
 
     def proc(self) -> None:
         global token
@@ -278,14 +271,11 @@ class Parser:
                     token = self.get_token()
                     self.procblock()
                 else:
-                    print("Error 281")
-                    exit()
+                    self.__error("SyntaxError", f"Procedure parameter list is not closed, instead got {token.recognized_string}")
             else:
-                print("Error 284")
-                exit()
+                self.__error("SyntaxError", f"Procedure parameter list is missing, instead got {token.recognized_string}")
         else:
-            print("Error 287")
-            exit()
+            self.__error("SyntaxError", f"Procedure should be named after an identifier, instead got {token.recognized_string}")
 
     def formalparlist(self) -> None:
         global token
@@ -305,6 +295,12 @@ class Parser:
                 self.sequence()
                 if token.recognized_string == "τέλος_συνάρτησης":
                     token = self.get_token()
+                else:
+                    self.__error("SyntaxError", f"Unclosed function block, expected 'τέλος_συνάρτησης' keyword, instead got {token.recognized_string}")
+            else:
+                self.__error("SyntaxError", f"Missing function block declaration, expected 'αρχή_συνάρτησης', instead got {token.recognized_string}")
+        else:
+            self.__error("SyntaxError", f"Function block's 'διαπροσωπεία' is missing, instead got {token.recognized_string}")
 
     def procblock(self) -> None:
         global token
@@ -319,6 +315,12 @@ class Parser:
                 self.sequence()
                 if token.recognized_string == "τέλος_διαδικασίας":
                     token = self.get_token()
+                else:
+                    self.__error("SyntaxError", f"Unclosed procedure block, expected 'τέλος_διαδικασίας', instead got {token.recognized_string}")
+            else:
+                self.__error("SyntaxError", f"Missing procedure block declaration, expected 'αρχή_διαδικασίας', instead got {token.recognized_string}")
+        else:
+            self.__error("SyntaxError", f"Procedure block's 'διαπροσωπεία' is missing, instead got {token.recognized_string}")
 
     def funcinput(self) -> None:
         global token
@@ -365,6 +367,9 @@ class Parser:
         elif token.recognized_string == "εκτέλεσε":
             token = self.get_token()
             self.call_stat()
+        else:
+            # error or nothing?
+            return
 
 
     def assignment_stat(self) -> None:
@@ -372,6 +377,8 @@ class Parser:
         if token.recognized_string == ":=":
             token = self.get_token()
             self.expression()
+        else:
+            self.__error("SyntaxError", f"Expected ':=', instead got {token.recognized_string}")
 
     def if_stat(self) -> None:
         global token
@@ -383,11 +390,9 @@ class Parser:
             if token.recognized_string == "εάν_τέλος":
                 token = self.get_token()
             else:
-                print("Error 387")
-                exit()
+                self.__error("SyntaxError", f"Unclosed 'εάν' statement, expected 'εάν_τέλος', instead got {token.recognized_string}")
         else:
-            print("Error 390")
-            exit()
+            self.__error("SyntaxError", f"Expected 'τότε', instead got {token.recognized_string}")
 
 
     def while_stat(self) -> None:
@@ -399,11 +404,9 @@ class Parser:
             if token.recognized_string == "όσο_τέλος":
                 token = self.get_token()
             else:
-                print("Error 403")
-                exit()
+                self.__error("SyntaxError", f"Unclosed 'όσο' statement, expected 'όσο_τέλος', instead got {token.recognized_string}")
         else:
-            print("Error 406")
-            exit()
+            self.__error("SyntaxError", f"Expected 'όσο', instead got {token.recognized_string}")
 
     def do_stat(self) -> None:
         global token
@@ -412,8 +415,7 @@ class Parser:
             token = self.get_token()
             self.condition()
         else:
-            print("Error 416")
-            exit()
+            self.__error("SyntaxError", f"Expeted 'μέχρι', instead got {token.recognized_string}")
 
     def for_stat(self) -> None:
         global token
@@ -432,15 +434,15 @@ class Parser:
                         if token.recognized_string == "για_τέλος":
                             token = self.get_token()
                         else:
-                            self.__error("SyntaxError", f"Expected 'για_τέλος' at the end of 'για' loop, got {token}")
+                            self.__error("SyntaxError", f"Unclosed 'για' statement, expected 'για_τέλος', instead got {token.recognized_string}")
                     else:
-                        self.__error("SyntaxError", f"Expected 'επανάλαβε' in 'για' loop, got {token}")
+                        self.__error("SyntaxError", f"Expected 'επανάλαβε', instead got {token.recognized_string}")
                 else:
-                    self.__error("SyntaxError", f"Expected 'έως' in 'για' loop, got {token}")
+                    self.__error("SyntaxError", f"Expected 'έως', instead got {token.recognized_string}")
             else:
-                self.__error("SyntaxError", f"Expected ':=' after loop variable in 'για' statement, got {token}")
+                self.__error("SyntaxError", f"Expected ':=' , instead got {token.recognized_string}")
         else:
-            self.__error("SyntaxError", f"Expected an identifier for loop variable in 'για' statement, got {token}")
+            self.__error("SyntaxError", f"Expected 'για', instead got {token.recognized_string}")
 
 
     def input_stat(self) -> None:
@@ -448,17 +450,24 @@ class Parser:
         if token.family == "identifier":
             token = self.get_token()
         else:
-            self.__error("SyntaxError", f"Expected an identifier after 'διάβασε' statement, got {token}")
+            self.__error("SyntaxError", f"Expected an identifier after 'διάβασε' statement, got {token.recognized_string}")
 
     def print_stat(self) -> None:
         global token
-        self.expression()
+        if token.family in ["digit", "identifier"] or token.recognized_string == "(":
+            self.expression()
+        else:
+            self.__error("SyntaxError", f"Expected an expresion after 'γράψε' keyword, instead got {token.recognized_string} ")
 
+    # function call if function has not parameters is call function_name without ()
     def call_stat(self) -> None:
         global token
         if token.family == "identifier":
             token = self.get_token()
-            self.idtail()
+            if token.recognized_string == "(":
+                self.idtail()
+        else:
+            self.__error("SyntaxError", f"Expected an identifier, instead got {token.recognized_string}")
 
     def else_part(self) -> None:
         global token
@@ -483,6 +492,8 @@ class Parser:
         self.actualparlist()
         if token.recognized_string == ")":
             token = self.get_token()
+        else:
+            self.__error("SyntaxError", f"Unclosed parameter list, expected ')', instead got {token.recognized_string}")
 
     def actualparlist(self) -> None:
         global token
@@ -498,10 +509,11 @@ class Parser:
             if token.family == "identifier":
                 token = self.get_token()
             else:
-                print("Error")
-                exit()
+                self.__error("SyntaxError", f"Expected an identifier after '%' operator, instead got {token.recognized_string}")
+        elif token.family in ["number", "identifier"] or token.recognized_string == "(":
+             self.expression()
         else:
-            self.expression()
+            self.__error("SyntaxError", f"Expected an identifier or an expresion, instead got {token.recognized_string}")
 
     def condition(self) -> None:
         global token
@@ -526,15 +538,23 @@ class Parser:
                 self.condition()
                 if token.recognized_string == "]":
                     token = self.get_token()
+                else:
+                    self.__error("SyntaxError", f"Unclosed condition, expected ']', instead got {token.recognized_string}")
+            else:
+                self.__error("SyntaxError", f"Expected condition group symbol '[' after 'όχι' keyword, instead got {token.recognized_string}")
         elif token.recognized_string == "[":
             token = self.get_token()
             self.condition()
             if token.recognized_string == "]":
                 token = self.get_token()
-        else:
+            else:
+                self.__error("SyntaxError", f"Unclosed condition, expected '], instead got {token.recognized_string}")
+        elif token.family in ["digit", "identifier"] or token.recognized_string == "(":
             self.expression()
             self.relational_oper()
             self.expression()
+        else:
+            self.__error("SyntaxError", f"Not a valid condition")
 
     def expression(self) -> None:
         global token
@@ -543,7 +563,6 @@ class Parser:
         while token.family == "addOper":
             self.add_oper()
             self.term()
-
 
     def term(self) -> None:
         global token
@@ -562,11 +581,12 @@ class Parser:
             if token.recognized_string == ")":
                 token = self.get_token()
             else:
-                print("Error")
-                exit()
+                self.__error("SyntaxError", f"Unclosed expression, expected ')', instead got {token.recognized_string}")
         elif token.family == "identifier":
             token = self.get_token()
             self.idtail()
+        else:
+            self.__error("SyntaxError", f"Not a valid expression")
 
     def relational_oper(self) -> None:
         global token
@@ -575,17 +595,18 @@ class Parser:
 
     def add_oper(self) -> None:
         global token
-        if token.recognized_string == "+":
+        if token.recognized_string in ["+", "-"]:
             token = self.get_token()
-        elif token.recognized_string == "-":
-            token = self.get_token()
+        else:
+            self.__error("SyntaxError", f"Expected add operation symbols, intead got {token.recognized_string}")
+        
 
     def mul_oper(self) -> None:
         global token
-        if token.recognized_string == "*":
+        if token.recognized_string in ["*", "/"]:
             token = self.get_token()
-        elif token.recognized_string == "/":
-            token = self.get_token()
+        else:
+            self.__error("SyntaxError", f"Expected mul operation symbol, instead got {token.recognized_string}")
 
     def optional_sign(self) -> None:
         global token
@@ -602,8 +623,8 @@ class Parser:
 #Usage: type in terminal python3 compiler.py your_file_name
 if __name__ == "__main__":
 
-    #file = "test.gpp"
-    file = sys.argv[1]
+    file = "fact.gpp"
+    #file = sys.argv[1]
     lex: Lex = Lex(file)
     parser: Parser = Parser(lex)
     parser.syntax_analyzer()

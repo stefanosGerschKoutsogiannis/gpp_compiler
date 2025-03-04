@@ -1,0 +1,23 @@
+πρόγραμμα fibonacci_test
+    δήλωση n, result
+
+    συνάρτηση fibonacci( n )
+        διαπροσωπεία
+        είσοδος n
+        αρχή_συνάρτησης
+            εάν n = 0 τότε
+                fibonacci := 0
+            αλλιώς 
+                εάν n = 1 τότε
+                    fibonacci := 1
+                αλλιώς
+                    fibonacci := fibonacci( n-1 ) + fibonacci( n-2 )
+                εάν_τέλος
+            εάν_τέλος
+        τέλος_συνάρτησης
+
+    αρχή_προγράμματος
+        γράψε giveNumber ;
+        διάβασε n ;
+        result := fibonacci(n) ;
+    τέλος_προγράμματος
