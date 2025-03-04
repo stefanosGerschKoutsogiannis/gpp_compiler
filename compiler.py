@@ -178,6 +178,7 @@ class Parser:
 
     def __init__(self, lex: Lex) -> None:
         self.lex: Lex = lex
+        self.tokens = open("output_extra/tokens.txt", "a")
         # new code
         #self.generated_program: QuadList = QuadList()
 
@@ -615,19 +616,23 @@ class Parser:
             self.add_oper()
 
     def get_token(self) -> Token:
-        return self.lex.next_token()
+        ret_token = self.lex.next_token()
+        self.tokens.write(str(ret_token)+"\n")
+        return ret_token
     
     def __error(self, error_type, msg):
         print(f"{error_type} ({self.lex.current_line}): {msg}")
+        self.tokens.close()
         exit(-1)
 
     def __success_exit(self):
+        self.tokens.close()
         exit(1)
     
 #Usage: type in terminal python3 compiler.py your_file_name
 if __name__ == "__main__":
 
-    file = "fact.gpp"
+    file = "test.gpp"
     #file = sys.argv[1]
     lex: Lex = Lex(file)
     parser: Parser = Parser(lex)
