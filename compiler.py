@@ -527,6 +527,8 @@ class Parser:
 
             self.quad_ops.gen_quad("call", id_name, "_", "_")
 
+        return id_name
+
     def actualpars(self) -> None:
         global token
         self.actualparlist()
@@ -554,7 +556,7 @@ class Parser:
                 token = self.get_token()
             else:
                 self.__error("SyntaxError", f"Expected an identifier after '%' operator, instead got {token.recognized_string}")
-        elif token.family in ["number", "identifier"] or token.recognized_string == "(":
+        elif token.family in ["digit", "identifier"] or token.recognized_string == "(":
                 par = self.expression()
 
                 #is this even correct?
@@ -614,6 +616,7 @@ class Parser:
 
             w = self.quad_ops.new_temp()
             self.quad_ops.gen_quad(add_oper_symbol, term_1_place, term_2_place, w)
+            term_1_place = w
         
         expression_place = term_1_place
         return expression_place
@@ -627,6 +630,7 @@ class Parser:
 
             w = self.quad_ops.new_temp()
             self.quad_ops.gen_quad(mul_oper_symbol, factor_1_place, factor_2_place, w)
+            factor_1_place = w
         
         term_place = factor_1_place
         return term_place
@@ -659,6 +663,7 @@ class Parser:
 
             # not certain
             factor_place = self.idtail(id_name)
+            return factor_place
 
             #self.quad_ops.gen_quad()
         else:
