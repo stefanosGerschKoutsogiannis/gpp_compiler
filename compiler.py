@@ -3,6 +3,10 @@
 
 import string
 import sys
+import os
+from typing import List
+from pathlib import Path
+import shutil
 
 RESERVED_KEYWORDS = [
     "πρόγραμμα", "δήλωση", "εάν", "τότε", "αλλιώς",
@@ -27,9 +31,10 @@ RELATIONAL_SYMBOLS = ["=", "<", ">", "<>", "<=", ">="]
 
 LETTERS = ENGLISH_LETTERS+GREEK_LETTERS+GREEK_PUNCTUATIONS
 
-TEMP_COUNTER = 0
 DELIMETERS = [",",";", ":"]
 BY_REFERENCE_OPERATOR = "%"
+
+TEMP_COUNTER = 0
 
 class Token:
 
@@ -178,9 +183,12 @@ class Parser:
 
     def __init__(self, lex: Lex) -> None:
         self.lex: Lex = lex
-        self.tokens = open("output_extra/tokens.txt", "a")
+        self.__set_up_log()
+        self.tokens = open("log/tokens.txt", "a")
+        self.quads = open("log/quadlist.int", "a")
         # new code
-        #self.generated_program: QuadList = QuadList()
+        self.quad_ops: QuadList = QuadList()
+        self.generated_program = self.quad_ops.program_list
 
     def syntax_analyzer(self) -> None:
         global token
@@ -193,22 +201,28 @@ class Parser:
         if token.recognized_string == "πρόγραμμα":
             token = self.get_token()
             if token.family == "identifier":
+                program_name = token.recognized_string
                 token = self.get_token()
-                self.programblock()
+                self.programblock(program_name)
             else:
                 self.__error("SyntaxError", "Expected an identifier after 'πρόγραμμα' keyword, instead got {token.recognized_string}")
         else:
             self.__error("SyntaxError", "Program should start with 'πρόγραμμα' keyword, instead got {token.recognized_string}")
 
 
-    def programblock(self) -> None:
+    def programblock(self, program_name) -> None:
         global token
         self.declarations()
         self.subprograms()
         if token.recognized_string == "αρχή_προγράμματος":
+
+            self.quad_ops.gen_quad("begin_block", program_name, "_", "_")
+
             token = self.get_token()
             self.sequence()
             if token.recognized_string == "τέλος_προγράμματος":
+                self.quad_ops.gen_quad("halt", "_", "_", "_")
+                self.quad_ops.gen_quad("end_block", program_name, "_", "_")
                 self.__success_exit()
             else:
                 self.__error("SyntaxError", f"The program block is not closed, expected 'τέλος_προγράμματος', got {token}")
@@ -248,13 +262,14 @@ class Parser:
     def func(self) -> None:
         global token
         if token.family == "identifier":
+            function_name = token.recognized_string
             token = self.get_token()
             if token.recognized_string == "(":
                 token = self.get_token()
                 self.formalparlist()
                 if token.recognized_string == ")":
                     token = self.get_token()
-                    self.funcblock()
+                    self.funcblock(function_name)
                 else:
                     self.__error("SyntaxError", f"Function parameter list is not closed, instead got {token.recognized_string}")
             else:
@@ -265,13 +280,14 @@ class Parser:
     def proc(self) -> None:
         global token
         if token.family == "identifier":
+            procedure_name = token.recognized_string
             token = self.get_token()
             if token.recognized_string == "(":
                 token = self.get_token()
                 self.formalparlist()
                 if token.recognized_string == ")":
                     token = self.get_token()
-                    self.procblock()
+                    self.procblock(procedure_name)
                 else:
                     self.__error("SyntaxError", f"Procedure parameter list is not closed, instead got {token.recognized_string}")
             else:
@@ -284,7 +300,7 @@ class Parser:
         if token.family == "identifier":
             self.varlist()       
 
-    def funcblock(self) -> None:
+    def funcblock(self, function_name) -> None:
         global token
         if token.recognized_string == "διαπροσωπεία":
             token = self.get_token()
@@ -293,9 +309,14 @@ class Parser:
             self.declarations()
             self.subprograms()
             if token.recognized_string == "αρχή_συνάρτησης":
+
+                # code for the beginning of the function block
+                self.quad_ops.gen_quad("begin_block", function_name, "_", "_")
+
                 token = self.get_token()
                 self.sequence()
                 if token.recognized_string == "τέλος_συνάρτησης":
+                    self.quad_ops.gen_quad("end_block", function_name, "_", "_")
                     token = self.get_token()
                 else:
                     self.__error("SyntaxError", f"Unclosed function block, expected 'τέλος_συνάρτησης' keyword, instead got {token.recognized_string}")
@@ -304,7 +325,7 @@ class Parser:
         else:
             self.__error("SyntaxError", f"Function block's 'διαπροσωπεία' is missing, instead got {token.recognized_string}")
 
-    def procblock(self) -> None:
+    def procblock(self, procedure_name) -> None:
         global token
         if token.recognized_string == "διαπροσωπεία":
             token = self.get_token()
@@ -313,6 +334,9 @@ class Parser:
             self.declarations()
             self.subprograms()
             if token.recognized_string == "αρχή_διαδικασίας":
+
+                # code for the beginning of the procedure block
+                self.quad_ops.gen_quad("begin_block", procedure_name, "_", "_")
                 token = self.get_token()
                 self.sequence()
                 if token.recognized_string == "τέλος_διαδικασίας":
@@ -346,8 +370,9 @@ class Parser:
     def statement(self) -> None:
         global token
         if token.family == "identifier":
+            id_name = token.recognized_string
             token = self.get_token()
-            self.assignment_stat()
+            self.assignment_stat(id_name)
         elif token.recognized_string == "εάν":
             token = self.get_token()
             self.if_stat()
@@ -374,11 +399,13 @@ class Parser:
             return
 
 
-    def assignment_stat(self) -> None:
+    def assignment_stat(self, id_name) -> None:
         global token
         if token.recognized_string == ":=":
             token = self.get_token()
-            self.expression()
+            expression_place = self.expression()
+
+            self.quad_ops.gen_quad(":=", expression_place, "_", id_name)
         else:
             self.__error("SyntaxError", f"Expected ':=', instead got {token.recognized_string}")
 
@@ -450,6 +477,9 @@ class Parser:
     def input_stat(self) -> None:
         global token
         if token.family == "identifier":
+
+            self.quad_ops.gen_quad("inp", token.recognized_string, "_", "_")
+
             token = self.get_token()
         else:
             self.__error("SyntaxError", f"Expected an identifier after 'διάβασε' statement, got {token.recognized_string}")
@@ -457,7 +487,10 @@ class Parser:
     def print_stat(self) -> None:
         global token
         if token.family in ["digit", "identifier"] or token.recognized_string == "(":
-            self.expression()
+            expression_place = self.expression()
+
+            self.quad_ops.gen_quad("out", expression_place, "_", "_")
+
         else:
             self.__error("SyntaxError", f"Expected an expresion after 'γράψε' keyword, instead got {token.recognized_string} ")
 
@@ -465,9 +498,11 @@ class Parser:
     def call_stat(self) -> None:
         global token
         if token.family == "identifier":
+            id_name = token.recognized_string
+
             token = self.get_token()
             if token.recognized_string == "(":
-                self.idtail()
+                self.idtail(id_name)
         else:
             self.__error("SyntaxError", f"Expected an identifier, instead got {token.recognized_string}")
 
@@ -483,11 +518,14 @@ class Parser:
             token = self.get_token()
             self.expression()
 
-    def idtail(self) -> None:
+    # here add ret value
+    def idtail(self, id_name) -> str:
         global token
         if token.recognized_string == "(":
             token = self.get_token()
             self.actualpars()
+
+            self.quad_ops.gen_quad("call", id_name, "_", "_")
 
     def actualpars(self) -> None:
         global token
@@ -509,11 +547,18 @@ class Parser:
         if token.recognized_string == "%":
             token = self.get_token()
             if token.family == "identifier":
+
+                # code for call by reff
+                self.quad_ops.gen_quad("par", token.recognized_string, "REF", "_")
+
                 token = self.get_token()
             else:
                 self.__error("SyntaxError", f"Expected an identifier after '%' operator, instead got {token.recognized_string}")
         elif token.family in ["number", "identifier"] or token.recognized_string == "(":
-             self.expression()
+                par = self.expression()
+
+                #is this even correct?
+                self.quad_ops.gen_quad("par", par, "CV", "_")
         else:
             self.__error("SyntaxError", f"Expected an identifier or an expresion, instead got {token.recognized_string}")
 
@@ -558,35 +603,63 @@ class Parser:
         else:
             self.__error("SyntaxError", f"Not a valid condition")
 
-    def expression(self) -> None:
+    def expression(self) -> str:
         global token
+        # add it?
         self.optional_sign()
-        self.term()
+        term_1_place = self.term()
         while token.family == "addOper":
-            self.add_oper()
-            self.term()
+            add_oper_symbol = self.add_oper()
+            term_2_place = self.term()
 
-    def term(self) -> None:
+            w = self.quad_ops.new_temp()
+            self.quad_ops.gen_quad(add_oper_symbol, term_1_place, term_2_place, w)
+        
+        expression_place = term_1_place
+        return expression_place
+
+    def term(self) -> str:
         global token
-        self.factor()
+        factor_1_place = self.factor()
         while token.family == "mulOper":
-            self.mul_oper()
-            self.factor()
+            mul_oper_symbol = self.mul_oper()
+            factor_2_place = self.factor()
 
-    def factor(self) -> None:
+            w = self.quad_ops.new_temp()
+            self.quad_ops.gen_quad(mul_oper_symbol, factor_1_place, factor_2_place, w)
+        
+        term_place = factor_1_place
+
+    def factor(self) -> str:
         global token
         if token.family == "digit":
+
+            factor_place = token.recognized_string
             token = self.get_token()
+
+            return factor_place
         elif token.recognized_string == "(":
             token = self.get_token()
-            self.expression()
+
+            expression_place = self.expression()
+
             if token.recognized_string == ")":
+
+                factor_place = expression_place
+
                 token = self.get_token()
+                
+                return factor_place
             else:
                 self.__error("SyntaxError", f"Unclosed expression, expected ')', instead got {token.recognized_string}")
         elif token.family == "identifier":
+            id_name = token.recognized_string
             token = self.get_token()
-            self.idtail()
+
+            # not certain
+            factor_place = self.idtail(id_name)
+
+            #self.quad_ops.gen_quad()
         else:
             self.__error("SyntaxError", f"Not a valid expression")
 
@@ -595,18 +668,22 @@ class Parser:
         if token.recognized_string in RELATIONAL_SYMBOLS:
             token = self.get_token()
 
-    def add_oper(self) -> None:
+    def add_oper(self) -> str:
         global token
         if token.recognized_string in ["+", "-"]:
+            add_oper_symbol = token.recognized_string
             token = self.get_token()
+            return add_oper_symbol
         else:
             self.__error("SyntaxError", f"Expected add operation symbols, intead got {token.recognized_string}")
         
 
-    def mul_oper(self) -> None:
+    def mul_oper(self) -> str:
         global token
         if token.recognized_string in ["*", "/"]:
+            mul_oper_symbol = token.recognized_string
             token = self.get_token()
+            return mul_oper_symbol
         else:
             self.__error("SyntaxError", f"Expected mul operation symbol, instead got {token.recognized_string}")
 
@@ -626,9 +703,68 @@ class Parser:
         exit(-1)
 
     def __success_exit(self):
+        for quad in self.generated_program:
+            self.quads.write(str(quad) + "\n")
+        self.quads.close()
         self.tokens.close()
         exit(1)
+
+    def __set_up_log(self):
+        path = os.path.abspath(os.getcwd() + "/log")
+        if Path(os.path.abspath(os.getcwd() + "/log")).exists():
+            shutil.rmtree(path)
+        
+        os.makedirs(path)
     
+class Quad:
+
+    def __init__(self, label: str, op: str, op1: str, op2:str, op3:str) -> None:
+        self.label = label
+        self.op = op
+        self.op1 = op1
+        self.op2 = op2
+        self.op3 = op3
+
+    def __str__(self):
+        return f"Label: {self.label}, op: {self.op}, op1: {self.op1}, op2: {self.op2}, op3: {self.op3}"
+
+class QuadList:
+
+    def __init__(self):
+        self.program_list: List[Quad] = []
+        self.quad_counter = 0
+
+    def back_patch(self, list:List[str], z: str):
+        for i in range(self.program_list):
+            for j in range(list):
+                if self.program_list[i].label == list[j]:
+                    self.program_list[i].op3 = z
+
+    def gen_quad(self, op: str, op1: str, op2: str, op3: str):
+        self.quad_counter += 1
+        generated_quad = Quad(self.quad_counter, op, op1, op2, op3)
+        self.program_list.append(generated_quad)
+        return generated_quad
+
+    # needs fixing
+    def next_quad(self) -> int:
+        #self.quad_counter += 1
+        return self.quad_counter+1
+
+    def empty_list(self) -> List[str]:
+        return []
+
+    def make_list(self, item: str) -> List[str]:
+        return [item]
+
+    def merge_list(self, list1: List[str], list2: List[str]) -> List[str]:
+        return list1 + list2
+
+    def new_temp(self):
+        global TEMP_COUNTER 
+        TEMP_COUNTER += 1
+        return f"T_{TEMP_COUNTER}"
+
 #Usage: type in terminal python3 compiler.py your_file_name
 if __name__ == "__main__":
 
@@ -636,6 +772,4 @@ if __name__ == "__main__":
     #file = sys.argv[1]
     lex: Lex = Lex(file)
     parser: Parser = Parser(lex)
-    parser.syntax_analyzer()
-
-    
+    parser.syntax_analyzer()    
