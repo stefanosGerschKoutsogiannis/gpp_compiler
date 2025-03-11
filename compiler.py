@@ -766,10 +766,11 @@ class QuadList:
     def merge_list(self, list1: List[str], list2: List[str]) -> List[str]:
         return list1 + list2
 
-    def new_temp(self):
+    def new_temp(self) -> str:
         global TEMP_COUNTER 
+        ret = f"T_{TEMP_COUNTER}"
         TEMP_COUNTER += 1
-        return f"T_{TEMP_COUNTER}"
+        return ret
 
 #Usage: type in terminal python3 compiler.py your_file_name
 if __name__ == "__main__":
