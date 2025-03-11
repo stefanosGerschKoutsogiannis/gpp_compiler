@@ -330,6 +330,8 @@ class Parser:
         if token.recognized_string == "διαπροσωπεία":
             token = self.get_token()
             self.funcinput()
+
+            # should it even be here
             self.funcoutput()
             self.declarations()
             self.subprograms()
