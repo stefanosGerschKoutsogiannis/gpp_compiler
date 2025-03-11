@@ -629,6 +629,7 @@ class Parser:
             self.quad_ops.gen_quad(mul_oper_symbol, factor_1_place, factor_2_place, w)
         
         term_place = factor_1_place
+        return term_place
 
     def factor(self) -> str:
         global token
@@ -719,11 +720,11 @@ class Parser:
 class Quad:
 
     def __init__(self, label: str, op: str, op1: str, op2:str, op3:str) -> None:
-        self.label = label
-        self.op = op
-        self.op1 = op1
-        self.op2 = op2
-        self.op3 = op3
+        self.label: str = label
+        self.op: str = op
+        self.op1: str = op1
+        self.op2: str = op2
+        self.op3: str = op3
 
     def __str__(self):
         return f"Label: {self.label}, op: {self.op}, op1: {self.op1}, op2: {self.op2}, op3: {self.op3}"
@@ -732,13 +733,13 @@ class QuadList:
 
     def __init__(self):
         self.program_list: List[Quad] = []
-        self.quad_counter = 0
+        self.quad_counter: int = 0
 
-    def back_patch(self, list:List[str], z: str):
+    def back_patch(self, list:List[str], label: str):
         for i in range(self.program_list):
             for j in range(list):
                 if self.program_list[i].label == list[j]:
-                    self.program_list[i].op3 = z
+                    self.program_list[i].op3 = label
 
     def gen_quad(self, op: str, op1: str, op2: str, op3: str):
         self.quad_counter += 1
@@ -754,8 +755,8 @@ class QuadList:
     def empty_list(self) -> List[str]:
         return []
 
-    def make_list(self, item: str) -> List[str]:
-        return [item]
+    def make_list(self, label: str) -> List[str]:
+        return [label]
 
     def merge_list(self, list1: List[str], list2: List[str]) -> List[str]:
         return list1 + list2
