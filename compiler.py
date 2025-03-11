@@ -4,7 +4,7 @@
 import string
 import sys
 import os
-from typing import List
+from typing import List, Tuple
 from pathlib import Path
 import shutil
 
@@ -564,44 +564,88 @@ class Parser:
         else:
             self.__error("SyntaxError", f"Expected an identifier or an expresion, instead got {token.recognized_string}")
 
-    def condition(self) -> None:
+    def condition(self) -> Tuple[List[str], List[str]]:
         global token
-        self.boolterm()
-        if token.recognized_string == "ή":
-            token = self.get_token()
-            self.boolterm()
+        boolterm_1_place = self.boolterm()
 
-    def boolterm(self) -> None:
+        condition_true = boolterm_1_place[0]
+        condition_false = boolterm_1_place[1]
+
+        while token.recognized_string == "ή":
+
+            self.quad_ops.back_patch(condition_false, self.quad_ops.next_quad())
+
+            token = self.get_token()
+            boolterm_2_place = self.boolterm()
+            
+            condition_true = self.quad_ops.merge_list(condition_true, boolterm_2_place[0])
+            condition_false = boolterm_2_place[1] # Q2_false
+
+        return condition_true, condition_false
+
+    def boolterm(self) -> Tuple[List[str], List[str]]:
         global token
-        self.boolfactor()
+        boolfactor_1_place = self.boolfactor()
+
+        boolterm_true = boolfactor_1_place[0]
+        boolterm_false = boolfactor_1_place[1]
+
         while token.recognized_string == "και":
-            token = self.get_token()
-            self.boolfactor()
+            self.quad_ops.back_patch(boolterm_true, self.quad_ops.next_quad())
 
-    def boolfactor(self) -> None:
+            token = self.get_token()
+            boolfactor_2_place = self.boolfactor()
+
+            boolterm_false = self.quad_ops.merge_list(boolterm_false, boolfactor_2_place[1])
+            boolterm_true = boolfactor_2_place[0]
+
+        return boolterm_true, boolterm_false
+
+
+    def boolfactor(self) -> Tuple[List[str], List[str]]:
         global token
         if token.recognized_string == "όχι":
             token = self.get_token()
             if token.recognized_string == "[":
                 token = self.get_token()
-                self.condition()
+            
+                boolfactor_place = self.condition()
+                boolfactor_true = boolfactor_place[1]
+                boolfactor_false = boolfactor_place[0]
+
                 if token.recognized_string == "]":
                     token = self.get_token()
+
+                    return boolfactor_true, boolfactor_false
                 else:
                     self.__error("SyntaxError", f"Unclosed condition, expected ']', instead got {token.recognized_string}")
             else:
                 self.__error("SyntaxError", f"Expected condition group symbol '[' after 'όχι' keyword, instead got {token.recognized_string}")
         elif token.recognized_string == "[":
             token = self.get_token()
-            self.condition()
+
+            boolfactor_place = self.condition()
+            boolfactor_true = boolfactor_place[0]
+            boolfactor_false = boolfactor_place[1]
+
             if token.recognized_string == "]":
                 token = self.get_token()
+
+                return boolfactor_true, boolfactor_false
             else:
                 self.__error("SyntaxError", f"Unclosed condition, expected '], instead got {token.recognized_string}")
         elif token.family in ["digit", "identifier"] or token.recognized_string == "(":
-            self.expression()
-            self.relational_oper()
-            self.expression()
+            expression_1_place = self.expression()
+            rel_oper_symbol = self.relational_oper()
+            expression_2_place = self.expression()
+
+            boolfactor_true = self.quad_ops.make_list(self.quad_ops.next_quad())
+            self.quad_ops.gen_quad(rel_oper_symbol, expression_1_place, expression_2_place, "_")
+            boolfactor_false = self.quad_ops.make_list(self.quad_ops.next_quad())
+            self.quad_ops.gen_quad("jump", "_", "_", "_")
+
+            return boolfactor_true, boolfactor_false
+
         else:
             self.__error("SyntaxError", f"Not a valid condition")
 
@@ -669,10 +713,12 @@ class Parser:
         else:
             self.__error("SyntaxError", f"Not a valid expression")
 
-    def relational_oper(self) -> None:
+    def relational_oper(self) -> str:
         global token
         if token.recognized_string in RELATIONAL_SYMBOLS:
+            rel_oper_symbol = token.recognized_string
             token = self.get_token()
+            return rel_oper_symbol
 
     def add_oper(self) -> str:
         global token
@@ -741,10 +787,10 @@ class QuadList:
         self.quad_counter: int = 0
 
     def back_patch(self, list:List[str], label: str):
-        for i in range(self.program_list):
-            for j in range(list):
-                if self.program_list[i].label == list[j]:
-                    self.program_list[i].op3 = label
+        for quad in self.program_list:
+            for label in list:
+                if quad.label == label:
+                    quad.op3 = label
 
     def gen_quad(self, op: str, op1: str, op2: str, op3: str):
         self.quad_counter += 1
@@ -775,7 +821,7 @@ class QuadList:
 #Usage: type in terminal python3 compiler.py your_file_name
 if __name__ == "__main__":
 
-    file = "test.gpp"
+    file = "test/test.gpp"
     #file = sys.argv[1]
     lex: Lex = Lex(file)
     parser: Parser = Parser(lex)
