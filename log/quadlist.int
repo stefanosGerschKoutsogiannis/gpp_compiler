@@ -36,7 +36,7 @@ Label: 35, op: :=, op1: T_9, op2: _, op3: β
 Label: 36, op: inp, op1: β, op2: _, op3: _
 Label: 37, op: +, op1: β, op2: 1, op3: T_10
 Label: 38, op: :=, op1: T_10, op2: _, op3: β
-Label: 39, op: <, op1: β, op2: 100, op3: _
+Label: 39, op: <, op1: β, op2: -100, op3: _
 Label: 40, op: jump, op1: _, op2: _, op3: _
 Label: 41, op: halt, op1: _, op2: _, op3: _
 Label: 42, op: end_block, op1: τεστ, op2: _, op3: _

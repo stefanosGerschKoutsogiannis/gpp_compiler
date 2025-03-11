@@ -654,8 +654,8 @@ class Parser:
     def expression(self) -> str:
         global token
         # add it?
-        self.optional_sign()
-        term_1_place = self.term()
+        opt_sign = self.optional_sign()
+        term_1_place = opt_sign + self.term()
         while token.family == "addOper":
             add_oper_symbol = self.add_oper()
             term_2_place = self.term()
@@ -741,10 +741,13 @@ class Parser:
         else:
             self.__error("SyntaxError", f"Expected mul operation symbol, instead got {token.recognized_string}")
 
-    def optional_sign(self) -> None:
+    def optional_sign(self) -> str:
         global token
+        ret = ""
         if token.family == "addOper":
-            self.add_oper()
+            ret += self.add_oper()
+            
+        return ret
 
     def get_token(self) -> Token:
         ret_token = self.lex.next_token()
