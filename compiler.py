@@ -1,6 +1,10 @@
 #Stefanos Gersch-Koutsogiannis 5046
 #Filippos Alexiou 5146
 
+# IMPORTANT, PLEASE READ ME, IT ONLY TAKES ONE MINUTE
+# note: sometimes read(char) works unexpectedly when moving file descriptor pointer back
+# to avoid it, add spaces between all characters
+
 import string
 import sys
 import os
@@ -413,11 +417,22 @@ class Parser:
 
     def if_stat(self) -> None:
         global token
-        self.condition()
+        condition_true, condition_false = self.condition()
         if token.recognized_string == "τότε":
+
+            self.quad_ops.back_patch(condition_true, self.quad_ops.next_quad())
+
             token = self.get_token()
             self.sequence()
+
+            if_list = self.quad_ops.make_list(self.quad_ops.next_quad())
+            self.quad_ops.gen_quad("jump", "_", "_", "_")
+            self.quad_ops.back_patch(condition_false, self.quad_ops.next_quad())
+
             self.else_part()
+
+            self.quad_ops.back_patch(if_list, self.quad_ops.next_quad())
+
             if token.recognized_string == "εάν_τέλος":
                 token = self.get_token()
             else:
@@ -428,10 +443,20 @@ class Parser:
 
     def while_stat(self) -> None:
         global token
-        self.condition()
+
+        cond_quad = self.quad_ops.next_quad()
+        condition_true, condition_false =  self.condition()
+
         if token.recognized_string == "επανάλαβε":
+
+            self.quad_ops.back_patch(condition_true, self.quad_ops.next_quad())
+
             token = self.get_token()
             self.sequence()
+
+            self.quad_ops.gen_quad("jump", "_", "_", cond_quad)
+            self.quad_ops.back_patch(condition_false, self.quad_ops.next_quad())
+
             if token.recognized_string == "όσο_τέλος":
                 token = self.get_token()
             else:
@@ -441,10 +466,17 @@ class Parser:
 
     def do_stat(self) -> None:
         global token
+
+        sequence_quad = self.quad_ops.next_quad()
+
         self.sequence()
         if token.recognized_string == "μέχρι":
             token = self.get_token()
-            self.condition()
+            condition_true, condition_false = self.condition()
+
+            self.quad_ops.back_patch(condition_false, sequence_quad)
+            self.quad_ops.back_patch(condition_true, self.quad_ops.next_quad())
+
         else:
             self.__error("SyntaxError", f"Expeted 'μέχρι', instead got {token.recognized_string}")
 
@@ -505,6 +537,9 @@ class Parser:
             token = self.get_token()
             if token.recognized_string == "(":
                 self.idtail(id_name)
+
+                # here call
+                self.quad_ops.gen_quad("call", id_name, "_", "_")
         else:
             self.__error("SyntaxError", f"Expected an identifier, instead got {token.recognized_string}")
 
@@ -526,8 +561,7 @@ class Parser:
         if token.recognized_string == "(":
             token = self.get_token()
             self.actualpars()
-
-            self.quad_ops.gen_quad("call", id_name, "_", "_")
+            #here was a call stat, did not work for functions, moved to call_stat
 
         return id_name
 
@@ -707,11 +741,17 @@ class Parser:
             id_name = token.recognized_string
             token = self.get_token()
 
-            # not certain
+            # not certain if it should return, might get none if identifier and not function
             factor_place = self.idtail(id_name)
-            return factor_place
 
-            #self.quad_ops.gen_quad()
+            #if function, proceed with intermidiate code creation, might need refactoring
+            w = self.quad_ops.new_temp()
+            self.quad_ops.gen_quad("par", w, "ret", "_")
+            self.quad_ops.gen_quad("call", id_name, "_", "_")
+
+            # propably return the name, if function the function, else the identifier
+            #look it
+            return factor_place
         else:
             self.__error("SyntaxError", f"Not a valid expression")
 
