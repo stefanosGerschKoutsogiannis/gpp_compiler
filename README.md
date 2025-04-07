@@ -20,7 +20,7 @@ python3 --version
 Clone the repository
 
 ```sh
-git clone https://github.com/<your_username>/gpp_compiler.git
+git clone https://github.com/stefanosGerschKoutsogiannis/gpp_compiler.git
 cd gpp-compiler
 ```
 
