@@ -11,6 +11,7 @@ import os
 from typing import List, Tuple
 from pathlib import Path
 import shutil
+from abc import ABC, abstractmethod
 
 RESERVED_KEYWORDS = [
     "πρόγραμμα", "δήλωση", "εάν", "τότε", "αλλιώς",
@@ -39,6 +40,14 @@ DELIMETERS = [",",";", ":"]
 BY_REFERENCE_OPERATOR = "%"
 
 TEMP_COUNTER = 0
+
+
+# codes for symbol table
+BY_VALUE = 0
+BY_REFERENCE = 1
+INTEGER = 0
+SYMBOL_TABLE_START = 12
+NESTING_LEVEL = 0
 
 class Token:
 
@@ -862,6 +871,85 @@ class QuadList:
         ret = f"T_{TEMP_COUNTER}"
         TEMP_COUNTER += 1
         return ret
+
+class Entity(ABC):
+
+    def __init__(self, name: str) -> None:
+        self.name: str = name
+
+class Variable(Entity):
+
+    def __init__(self, name: str, datatype: int, offset: int) -> None:
+        super().__init__(name)
+        self.datatype: int = datatype
+        self.offset: int = offset
+
+class TemporaryVariable(Variable):
+
+    def __init__(self, name: str, datatype: int, offset: int) -> None:
+        super().__init__(name, datatype, offset)
+
+class FormalParameter(Entity):
+
+    def __init__(self, name: str, datatype: int, mode: int) -> None:
+        super().__init__(name)
+        self.datatype: int = datatype
+        self.mode: int = mode
+
+# fill parameter
+
+class Procedure(Entity):
+
+    def __init__(self, name: str, starting_quad: Quad, frame_length: int) -> None:
+        super().__init__(name)
+        self.starting_quad: Quad = starting_quad
+        self.frame_length: int = frame_length
+        self.arguments: List[Argument] = []
+
+class Function(Procedure):
+
+    def __init__(self, name, starting_quad, frame_length, datatype) -> None:
+        super().__init__(name, starting_quad, frame_length)
+        self.datatype: int = datatype
+
+class Argument():
+
+    def __init__(self, par_mode: int, type: int) -> None:
+        self.par_mode: int = par_mode
+        self.type: int = type
+
+class Scope():
+
+    def __init__(self, nesting_level) -> None:
+        self.entity_list: List[Entity] = []
+        self.nesting_level: int = nesting_level
+
+class Table():
+
+    def __init__(self) -> None:
+        self.scope_list: List[Scope] = []
+
+    # might need some changes
+    def add_scope(self) -> None:
+        NESTING_LEVEL += 1
+        new_scope = Scope(NESTING_LEVEL)
+        self.scope_list.append(new_scope)
+
+    # will automatically delete everything
+    def delete_scope(self) -> None:
+        self.scope_list.pop()
+
+    # to current scope of course
+    def add_entity(self):
+        pass
+
+    # to current scope
+    def add_argument(self):
+        pass
+
+    # search the symbol table, go from level x until level 0
+    def search_entity(self, name):
+        pass
 
 #Usage: type in terminal python3 compiler.py your_file_name
 if __name__ == "__main__":
