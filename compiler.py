@@ -8,7 +8,7 @@
 import string
 import sys
 import os
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 from pathlib import Path
 import shutil
 from abc import ABC, abstractmethod
@@ -920,36 +920,48 @@ class Argument():
 
 class Scope():
 
+    # where to store arguments?
+    # arguments is a dictionary(key value, entity name, argument)
     def __init__(self, nesting_level) -> None:
-        self.entity_list: List[Entity] = []
+        self.entity_list: Dict[Entity, List[Argument]] = {}
         self.nesting_level: int = nesting_level
 
 class Table():
 
     def __init__(self) -> None:
         self.scope_list: List[Scope] = []
+        self.add_scope()
 
     # might need some changes
     def add_scope(self) -> None:
+        global NESTING_LEVEL
         NESTING_LEVEL += 1
         new_scope = Scope(NESTING_LEVEL)
         self.scope_list.append(new_scope)
 
-    # will automatically delete everything
+    # will automatically delete everything, decrease nesting level
     def delete_scope(self) -> None:
+        global NESTING_LEVEL
         self.scope_list.pop()
+        NESTING_LEVEL -= 1
 
     # to current scope of course
-    def add_entity(self):
-        pass
+    def add_entity(self, entity: Entity) -> None:
+        self.scope_list[-1].entity_list.update({entity, []})
 
-    # to current scope
-    def add_argument(self):
-        pass
+    # to current scope, to some entity(function or procedure)
+    def add_argument(self, entity: Entity, argument: Argument):
+        self.scope_list[-1].entity_list.get(entity).append(argument)
 
     # search the symbol table, go from level x until level 0
-    def search_entity(self, name):
-        pass
+    def search_entity(self, name: str) -> Entity:
+        current_level: int = NESTING_LEVEL
+        while current_level != 0:
+            scope = self.scope_list[current_level]
+            for entity in scope.entity_list:
+                if entity.name == name:
+                    return entity
+            current_level -= 1
 
 #Usage: type in terminal python3 compiler.py your_file_name
 if __name__ == "__main__":
