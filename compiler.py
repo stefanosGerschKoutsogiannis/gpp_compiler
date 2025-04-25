@@ -45,9 +45,9 @@ TEMP_COUNTER = 0
 # codes for symbol table
 BY_VALUE = 0
 BY_REFERENCE = 1
-INTEGER = 0
-SYMBOL_TABLE_START = 12
-NESTING_LEVEL = 0
+SYMBOL_TABLE_STEP = 4
+SYMBOL_TABLE_START = 12 # in bytes
+NESTING_LEVEL = -1    # at the start, incr to zero
 
 class Token:
 
@@ -199,9 +199,12 @@ class Parser:
         self.__set_up_log()
         self.tokens = open("log/tokens.txt", "a")
         self.quads = open("log/quadlist.int", "a")
+        # symbol table log
         # new code
         self.quad_ops: QuadList = QuadList()
         self.generated_program = self.quad_ops.program_list
+
+        self.symbol_table: Table = Table()
 
     def syntax_analyzer(self) -> None:
         global token
@@ -212,6 +215,9 @@ class Parser:
     def program(self) -> None:
         global token
         if token.recognized_string == "πρόγραμμα":
+
+            self.symbol_table.add_scope()
+        
             token = self.get_token()
             if token.family == "identifier":
                 program_name = token.recognized_string
@@ -247,11 +253,22 @@ class Parser:
         global token
         while token.recognized_string == "δήλωση":
             token = self.get_token()
-            self.varlist()
+            self.varlist("variable")
 
-    def varlist(self) -> None:
+    def varlist(self, entity_type) -> None:
         global token
         if token.family == "identifier":
+
+            if entity_type == "variable":
+                self.symbol_table.add_entity(Variable(token.recognized_string, "int", self.symbol_table.scope_list[-1].offset))
+                self.symbol_table.scope_list[-1].offset += 4
+            elif entity_type == "formal-parameter":
+                name = token.recognized_string
+                self.symbol_table.add_entity(FormalParameter(name, "int", "REF" if name[0] == "%" else "CV"))
+            else:
+                pass    # migth fill it later
+                
+
             token = self.get_token()
             while token.recognized_string == ",":
                 token = self.get_token()
@@ -311,7 +328,7 @@ class Parser:
     def formalparlist(self) -> None:
         global token
         if token.family == "identifier":
-            self.varlist()       
+            self.varlist("formal-parameter")       
 
     def funcblock(self, function_name) -> None:
         global token
@@ -325,6 +342,10 @@ class Parser:
 
                 # code for the beginning of the function block
                 self.quad_ops.gen_quad("begin_block", function_name, "_", "_")
+
+                self.symbol_table.add_entity(
+                    Function(function_name, self.quad_ops.quad_counter, "int", "_") # fill frame length later
+                )
 
                 token = self.get_token()
                 self.sequence()
@@ -352,6 +373,11 @@ class Parser:
 
                 # code for the beginning of the procedure block
                 self.quad_ops.gen_quad("begin_block", procedure_name, "_", "_")
+
+                self.symbol_table.add_entity(
+                    Procedure(procedure_name, self.quad_ops.quad_counter, "_") # fill frame length later
+                )
+
                 token = self.get_token()
                 self.sequence()
                 if token.recognized_string == "τέλος_διαδικασίας":
@@ -367,14 +393,15 @@ class Parser:
         global token
         if token.recognized_string == "είσοδος":
             token = self.get_token()
-            self.varlist()
+            self.varlist("variable")  # formal parameter?
 
     def funcoutput(self) -> None:
         global token
         if token.recognized_string == "έξοδος":
             token = self.get_token()
-            self.varlist()
+            self.varlist("variable")  # formal parameter?
 
+    # return last 
     def sequence(self) -> None:
         global token
         self.statement()
@@ -537,7 +564,6 @@ class Parser:
         else:
             self.__error("SyntaxError", f"Expected an expresion after 'γράψε' keyword, instead got {token.recognized_string} ")
 
-    # function call if function has not parameters is call function_name without ()
     def call_stat(self) -> None:
         global token
         if token.family == "identifier":
@@ -565,14 +591,15 @@ class Parser:
             self.expression()
 
     # here add ret value
-    def idtail(self, id_name) -> str:
+    def idtail(self, id_name) -> Tuple[str, str]:
         global token
         if token.recognized_string == "(":
             token = self.get_token()
             self.actualpars()
+            return id_name, "function-procedure"
             #here was a call stat, did not work for functions, moved to call_stat
 
-        return id_name
+        return id_name, "no-tail"
 
     def actualpars(self) -> None:
         global token
@@ -704,6 +731,10 @@ class Parser:
             term_2_place = self.term()
 
             w = self.quad_ops.new_temp()
+
+            self.symbol_table.add_entity(TemporaryVariable(w, self.symbol_table.scope_list[-1].offset))
+            self.symbol_table.scope_list[-1].offset += SYMBOL_TABLE_STEP
+
             self.quad_ops.gen_quad(add_oper_symbol, term_1_place, term_2_place, w)
             term_1_place = w
         
@@ -718,6 +749,10 @@ class Parser:
             factor_2_place = self.factor()
 
             w = self.quad_ops.new_temp()
+
+            self.symbol_table.add_entity(TemporaryVariable(w, self.symbol_table.scope_list[-1].offset))
+            self.symbol_table.scope_list[-1].offset += SYMBOL_TABLE_STEP
+
             self.quad_ops.gen_quad(mul_oper_symbol, factor_1_place, factor_2_place, w)
             factor_1_place = w
         
@@ -751,12 +786,14 @@ class Parser:
             token = self.get_token()
 
             # not certain if it should return, might get none if identifier and not function
-            factor_place = self.idtail(id_name)
+            factor_place, type = self.idtail(id_name)
 
-            #if function, proceed with intermidiate code creation, might need refactoring
-            w = self.quad_ops.new_temp()
-            self.quad_ops.gen_quad("par", w, "ret", "_")
-            self.quad_ops.gen_quad("call", id_name, "_", "_")
+            # place it into symbol table?
+            if type == "function-procedure":
+                w = self.quad_ops.new_temp()
+                self.quad_ops.gen_quad("par", w, "ret", "_")
+                self.quad_ops.gen_quad("call", id_name, "_", "_")
+                factor_place = w
 
             # propably return the name, if function the function, else the identifier
             #look it
@@ -832,7 +869,7 @@ class Quad:
         self.op3: str = op3
 
     def __str__(self):
-        return f"Label: {self.label}, op: {self.op}, op1: {self.op1}, op2: {self.op2}, op3: {self.op3}"
+        return f"L{self.label}: {self.op}, {self.op1}, {self.op2}, {self.op3}"
 
 class QuadList:
 
@@ -840,10 +877,11 @@ class QuadList:
         self.program_list: List[Quad] = []
         self.quad_counter: int = 0
 
+    # -.- 
     def back_patch(self, list:List[str], label: str):
         for quad in self.program_list:
-            for label in list:
-                if quad.label == label:
+            for quad_label in list:
+                if quad.label == quad_label:
                     quad.op3 = label
 
     def gen_quad(self, op: str, op1: str, op2: str, op3: str):
@@ -886,8 +924,8 @@ class Variable(Entity):
 
 class TemporaryVariable(Variable):
 
-    def __init__(self, name: str, datatype: int, offset: int) -> None:
-        super().__init__(name, datatype, offset)
+    def __init__(self, name: str, offset: int) -> None:
+        super().__init__(name, offset)
 
 class FormalParameter(Entity):
 
@@ -896,41 +934,45 @@ class FormalParameter(Entity):
         self.datatype: int = datatype
         self.mode: int = mode
 
-# fill parameter
+class Parameter(Variable, FormalParameter):
+
+    def __init__(self, name: str, offset: int, datatype: int, mode: int) -> None:
+        Variable.__init__(self, name, datatype, offset)
+        FormalParameter.__init__(self, name, datatype, mode)
 
 class Procedure(Entity):
 
-    def __init__(self, name: str, starting_quad: Quad, frame_length: int) -> None:
+    def __init__(self, name: str, starting_quad_label: int, frame_length: int) -> None:
         super().__init__(name)
-        self.starting_quad: Quad = starting_quad
+        self.starting_quad_label: int = starting_quad_label
         self.frame_length: int = frame_length
-        self.arguments: List[Argument] = []
+        self.arguments: List[FormalParameter] = []
 
 class Function(Procedure):
 
-    def __init__(self, name, starting_quad, frame_length, datatype) -> None:
-        super().__init__(name, starting_quad, frame_length)
+    def __init__(self, name: str, starting_quad_label: int, datatype: int, frame_length: int) -> None:
+        super().__init__(name, starting_quad_label, frame_length)
         self.datatype: int = datatype
 
 class Argument():
 
-    def __init__(self, par_mode: int, type: int) -> None:
+    def __init__(self, par_mode: int, datatype: int) -> None:
         self.par_mode: int = par_mode
-        self.type: int = type
+        self.type: int = datatype
 
 class Scope():
 
     # where to store arguments?
     # arguments is a dictionary(key value, entity name, argument)
     def __init__(self, nesting_level) -> None:
-        self.entity_list: Dict[Entity, List[Argument]] = {}
+        self.entities: Dict[Entity, List[Argument]] = {}
         self.nesting_level: int = nesting_level
+        self.offset = SYMBOL_TABLE_START
 
 class Table():
 
     def __init__(self) -> None:
         self.scope_list: List[Scope] = []
-        self.add_scope()
 
     # might need some changes
     def add_scope(self) -> None:
