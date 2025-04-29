@@ -211,11 +211,12 @@ class Parser:
         token = self.get_token()
         self.program()
 
-    
+    # add and delete program scope
     def program(self) -> None:
         global token
         if token.recognized_string == "πρόγραμμα":
 
+            # create scope for program
             self.symbol_table.add_scope()
         
             token = self.get_token()
@@ -223,6 +224,11 @@ class Parser:
                 program_name = token.recognized_string
                 token = self.get_token()
                 self.programblock(program_name)
+
+                # delete scope for program
+                self.symbol_table.delete_scope()
+
+                self.__success_exit()
             else:
                 self.__error("SyntaxError", "Expected an identifier after 'πρόγραμμα' keyword, instead got {token.recognized_string}")
         else:
@@ -242,7 +248,6 @@ class Parser:
             if token.recognized_string == "τέλος_προγράμματος":
                 self.quad_ops.gen_quad("halt", "_", "_", "_")
                 self.quad_ops.gen_quad("end_block", program_name, "_", "_")
-                self.__success_exit()
             else:
                 self.__error("SyntaxError", f"The program block is not closed, expected 'τέλος_προγράμματος', got {token}")
         else:
@@ -261,34 +266,54 @@ class Parser:
 
             if entity_type == "variable":
                 self.symbol_table.add_entity(Variable(token.recognized_string, "int", self.symbol_table.scope_list[-1].offset))
-                self.symbol_table.scope_list[-1].offset += 4
             elif entity_type == "formal-parameter":
-                name = token.recognized_string
-                self.symbol_table.add_entity(FormalParameter(name, "int", "REF" if name[0] == "%" else "CV"))
-            else:
-                pass    # migth fill it later
+                self.symbol_table.add_entity(FormalParameter(token.recognized_string, "int", "REF" if name[0] == "%" else "CV"))
                 
-
             token = self.get_token()
+
+            # repeat yourself in here
             while token.recognized_string == ",":
                 token = self.get_token()
                 if token.family == "identifier":
+
+                    if entity_type == "variable":
+                        self.symbol_table.add_entity(Variable(token.recognized_string, "int", self.symbol_table.scope_list[-1].offset))
+                    elif entity_type == "formal-parameter":
+                        name = token.recognized_string
+                        self.symbol_table.add_entity(FormalParameter(name, "int", "REF" if name[0] == "%" else "CV"))
+
                     token = self.get_token()
                 else:
                     self.__error("SyntaxError", f"Expected an identifier, instead got {token.recognized_string}")
 
+    # add entities to the current scope
     def subprograms(self) -> None:
         global token
         while token.recognized_string in ["συνάρτηση", "διαδικασία"]:
             if token.recognized_string == "συνάρτηση":
                 token = self.get_token()
+
+                # when we see that a function is present, fill whatever you can 
+                self.symbol_table.add_entity(Function(token.recognized_string, "_", "int", "_"))
+
                 self.func()
+
+                # remove from symbol table, compilation of this function is done
+                self.symbol_table.delete_scope()
             elif token.recognized_string == "διαδικασία":
                 token = self.get_token()
+
+                # when we see that a procedure is present, fill whatever you can 
+                self.symbol_table.add_entity(Function(token.recognized_string, "_", "int", "_"))
+
                 self.proc()
+
+                # remove from symbol table, compilation of this procedure is done
+                self.symbol_table.delete_scope()
             else:
                 self.__error("SyntaxError", f"No subprograms declared in program")
-            
+
+    # fill symbol table code 
     def func(self) -> None:
         global token
         if token.family == "identifier":
@@ -299,6 +324,7 @@ class Parser:
                 self.formalparlist()
                 if token.recognized_string == ")":
                     token = self.get_token()
+                    
                     self.funcblock(function_name)
                 else:
                     self.__error("SyntaxError", f"Function parameter list is not closed, instead got {token.recognized_string}")
@@ -307,8 +333,13 @@ class Parser:
         else:
             self.__error("SyntaxError", f"Function should be named after an identifier, instead got {token.recognized_string}")
 
+    # fill symbol table code
     def proc(self) -> None:
         global token
+
+        # create the scope for the procedure
+        self.symbol_table.add_scope()
+
         if token.family == "identifier":
             procedure_name = token.recognized_string
             token = self.get_token()
@@ -332,6 +363,8 @@ class Parser:
 
     def funcblock(self, function_name) -> None:
         global token
+        starting_quad = self.quad_ops.next_quad()   # probably
+
         if token.recognized_string == "διαπροσωπεία":
             token = self.get_token()
             self.funcinput()
@@ -343,15 +376,20 @@ class Parser:
                 # code for the beginning of the function block
                 self.quad_ops.gen_quad("begin_block", function_name, "_", "_")
 
-                self.symbol_table.add_entity(
-                    Function(function_name, self.quad_ops.quad_counter, "int", "_") # fill frame length later
-                )
-
                 token = self.get_token()
                 self.sequence()
                 if token.recognized_string == "τέλος_συνάρτησης":
                     self.quad_ops.gen_quad("end_block", function_name, "_", "_")
                     token = self.get_token()
+
+                    # probably?
+                    framelength = self.symbol_table.scope_list[-1].offset + 4   # to get total bytes
+
+                    # all info is available, fill missing 
+                    function = self.symbol_table.search_entity(function_name)
+                    function.starting_quad = starting_quad
+                    function.framelength = framelength
+
                 else:
                     self.__error("SyntaxError", f"Unclosed function block, expected 'τέλος_συνάρτησης' keyword, instead got {token.recognized_string}")
             else:
@@ -361,6 +399,8 @@ class Parser:
 
     def procblock(self, procedure_name) -> None:
         global token
+        starting_quad = self.quad_ops.next_quad()   # probably
+
         if token.recognized_string == "διαπροσωπεία":
             token = self.get_token()
             self.funcinput()
@@ -374,13 +414,20 @@ class Parser:
                 # code for the beginning of the procedure block
                 self.quad_ops.gen_quad("begin_block", procedure_name, "_", "_")
 
-                self.symbol_table.add_entity(
-                    Procedure(procedure_name, self.quad_ops.quad_counter, "_") # fill frame length later
-                )
-
                 token = self.get_token()
                 self.sequence()
                 if token.recognized_string == "τέλος_διαδικασίας":
+
+                    self.quad_ops.gen_quad("end_block", procedure_name, "_", "_")
+
+                    # probably?
+                    framelength = self.symbol_table.scope_list[-1].offset + 4   # to get total bytes
+
+                    # all info is available, fill missing 
+                    procedure = self.symbol_table.search_entity(procedure_name)
+                    procedure.starting_quad = starting_quad
+                    procedure.framelength = framelength
+
                     token = self.get_token()
                 else:
                     self.__error("SyntaxError", f"Unclosed procedure block, expected 'τέλος_διαδικασίας', instead got {token.recognized_string}")
@@ -393,13 +440,13 @@ class Parser:
         global token
         if token.recognized_string == "είσοδος":
             token = self.get_token()
-            self.varlist("variable")  # formal parameter?
+            self.varlist("formal-parameter")  # formal parameter? probably
 
     def funcoutput(self) -> None:
         global token
         if token.recognized_string == "έξοδος":
             token = self.get_token()
-            self.varlist("variable")  # formal parameter?
+            self.varlist("formal-parameter")  # formal parameter?
 
     # return last 
     def sequence(self) -> None:
@@ -519,17 +566,34 @@ class Parser:
     def for_stat(self) -> None:
         global token
         if token.family == "identifier":
+
+            start_variable = token.recognized_string
+
             token = self.get_token()
             if token.recognized_string == ":=":
                 token = self.get_token()
-                self.expression()
+                start_value = self.expression()   # the starting value for the for loop
+                self.quad_ops.gen_quad(":=", start_value, "_", start_variable)
+
                 if token.recognized_string == "έως":
                     token = self.get_token()
-                    self.expression()
-                    self.step()
+                    end_value = self.expression() # the ending value for the for loop
+
+                    step_value = self.step()  # step returns step if "with step" exists else returns zero (strings)
+
+                    # certain sequencies are performed, jump to end if the number of iterations is done, else to starting quad
                     if token.recognized_string == "επανάλαβε":
                         token = self.get_token()
+
+                        # to determine jump condition
+                        if int(step_value) >= 0:
+                            pass
+                        else:
+                            pass
+
                         self.sequence()
+
+
                         if token.recognized_string == "για_τέλος":
                             token = self.get_token()
                         else:
@@ -584,11 +648,14 @@ class Parser:
             token = self.get_token()
             self.sequence()
 
-    def step(self) -> None:
+    def step(self) -> str:  # or maybe an integer
         global token
         if token.recognized_string == "με_βήμα":
             token = self.get_token()
-            self.expression()
+            step = self.expression()
+            return step
+
+        return "1"
 
     # here add ret value
     def idtail(self, id_name) -> Tuple[str, str]:
@@ -791,6 +858,10 @@ class Parser:
             # place it into symbol table?
             if type == "function-procedure":
                 w = self.quad_ops.new_temp()
+
+                self.symbol_table.add_entity(TemporaryVariable(w, self.symbol_table.scope_list[-1].offset))
+                self.symbol_table.scope_list[-1].offset += 4
+
                 self.quad_ops.gen_quad("par", w, "ret", "_")
                 self.quad_ops.gen_quad("call", id_name, "_", "_")
                 factor_place = w
@@ -934,6 +1005,7 @@ class FormalParameter(Entity):
         self.datatype: int = datatype
         self.mode: int = mode
 
+# might remove it
 class Parameter(Variable, FormalParameter):
 
     def __init__(self, name: str, offset: int, datatype: int, mode: int) -> None:
@@ -946,7 +1018,7 @@ class Procedure(Entity):
         super().__init__(name)
         self.starting_quad_label: int = starting_quad_label
         self.frame_length: int = frame_length
-        self.arguments: List[FormalParameter] = []
+        self.arguments: List[Argument] = []
 
 class Function(Procedure):
 
@@ -965,7 +1037,7 @@ class Scope():
     # where to store arguments?
     # arguments is a dictionary(key value, entity name, argument)
     def __init__(self, nesting_level) -> None:
-        self.entities: Dict[Entity, List[Argument]] = {}
+        self.entity_list: List[Entity] = []
         self.nesting_level: int = nesting_level
         self.offset = SYMBOL_TABLE_START
 
@@ -978,8 +1050,7 @@ class Table():
     def add_scope(self) -> None:
         global NESTING_LEVEL
         NESTING_LEVEL += 1
-        new_scope = Scope(NESTING_LEVEL)
-        self.scope_list.append(new_scope)
+        self.scope_list.append(Scope(NESTING_LEVEL))
 
     # will automatically delete everything, decrease nesting level
     def delete_scope(self) -> None:
@@ -989,16 +1060,19 @@ class Table():
 
     # to current scope of course
     def add_entity(self, entity: Entity) -> None:
-        self.scope_list[-1].entity_list.update({entity, []})
+        scope = self.scope_list[-1]
+        scope.entity_list.append(entity)
+        scope.offset += 4
+
 
     # to current scope, to some entity(function or procedure)
     def add_argument(self, entity: Entity, argument: Argument):
-        self.scope_list[-1].entity_list.get(entity).append(argument)
+        self.scope_list[-1].entity_list[-1].arguments.append[argument]
 
-    # search the symbol table, go from level x until level 0
+    # search the symbol table, go from level x until level 0(searches also at level 0)
     def search_entity(self, name: str) -> Entity:
         current_level: int = NESTING_LEVEL
-        while current_level != 0:
+        while current_level != -1:
             scope = self.scope_list[current_level]
             for entity in scope.entity_list:
                 if entity.name == name:
