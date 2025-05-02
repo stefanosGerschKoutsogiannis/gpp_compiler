@@ -199,6 +199,7 @@ class Parser:
         self.__set_up_log()
         self.tokens = open("log/tokens.txt", "a")
         self.quads = open("log/quadlist.int", "a")
+        self.table = open("log/table.sym", "a")
         # symbol table log
         # new code
         self.quad_ops: QuadList = QuadList()
@@ -226,6 +227,7 @@ class Parser:
                 self.programblock(program_name)
 
                 # delete scope for program
+                self.__write_to_sym_file()
                 self.symbol_table.delete_scope()
 
                 self.__success_exit()
@@ -258,74 +260,58 @@ class Parser:
         global token
         while token.recognized_string == "δήλωση":
             token = self.get_token()
-            self.varlist("variable")
+            self.varlist("declarations", "_")
 
-    def varlist(self, entity_type) -> None:
+    def varlist(self, caller: str, function_name: str) -> None:
         global token
         if token.family == "identifier":
-
-            if entity_type == "variable":
-                self.symbol_table.add_entity(Variable(token.recognized_string, "int", self.symbol_table.scope_list[-1].offset))
-            elif entity_type == "formal-parameter":
-                self.symbol_table.add_entity(FormalParameter(token.recognized_string, "int", "REF" if name[0] == "%" else "CV"))
-                
+            id_name = token.recognized_string
+            self.__manage_varlist(caller, id_name, function_name)
             token = self.get_token()
 
             # repeat yourself in here
             while token.recognized_string == ",":
                 token = self.get_token()
                 if token.family == "identifier":
-
-                    if entity_type == "variable":
-                        self.symbol_table.add_entity(Variable(token.recognized_string, "int", self.symbol_table.scope_list[-1].offset))
-                    elif entity_type == "formal-parameter":
-                        name = token.recognized_string
-                        self.symbol_table.add_entity(FormalParameter(name, "int", "REF" if name[0] == "%" else "CV"))
-
+                    id_name = token.recognized_string
                     token = self.get_token()
+                    self.__manage_varlist(caller, id_name, function_name)
                 else:
                     self.__error("SyntaxError", f"Expected an identifier, instead got {token.recognized_string}")
-
-    # add entities to the current scope
+            
     def subprograms(self) -> None:
         global token
         while token.recognized_string in ["συνάρτηση", "διαδικασία"]:
             if token.recognized_string == "συνάρτηση":
                 token = self.get_token()
 
-                # when we see that a function is present, fill whatever you can 
-                self.symbol_table.add_entity(Function(token.recognized_string, "_", "int", "_"))
-
                 self.func()
-
-                # remove from symbol table, compilation of this function is done
-                self.symbol_table.delete_scope()
             elif token.recognized_string == "διαδικασία":
                 token = self.get_token()
 
-                # when we see that a procedure is present, fill whatever you can 
-                self.symbol_table.add_entity(Function(token.recognized_string, "_", "int", "_"))
-
                 self.proc()
-
-                # remove from symbol table, compilation of this procedure is done
-                self.symbol_table.delete_scope()
             else:
                 self.__error("SyntaxError", f"No subprograms declared in program")
 
-    # fill symbol table code 
     def func(self) -> None:
         global token
         if token.family == "identifier":
             function_name = token.recognized_string
+            self.symbol_table.add_entity(Function(function_name, "_", "int", "_"))
+            self.symbol_table.add_scope()
+
             token = self.get_token()
             if token.recognized_string == "(":
                 token = self.get_token()
-                self.formalparlist()
+                self.formalparlist(function_name)
                 if token.recognized_string == ")":
                     token = self.get_token()
                     
                     self.funcblock(function_name)
+
+                    # remove from symbol table, compilation of this function is done
+                    self.__write_to_sym_file()
+                    self.symbol_table.delete_scope()
                 else:
                     self.__error("SyntaxError", f"Function parameter list is not closed, instead got {token.recognized_string}")
             else:
@@ -336,19 +322,23 @@ class Parser:
     # fill symbol table code
     def proc(self) -> None:
         global token
-
-        # create the scope for the procedure
-        self.symbol_table.add_scope()
-
         if token.family == "identifier":
             procedure_name = token.recognized_string
+            self.symbol_table.add_entity(Procedure(procedure_name, "_", "_"))
+            self.symbol_table.add_scope()
             token = self.get_token()
             if token.recognized_string == "(":
                 token = self.get_token()
-                self.formalparlist()
+
+                # keep them and then in funcblock compare if they match
+                self.formalparlist(procedure_name)
                 if token.recognized_string == ")":
                     token = self.get_token()
                     self.procblock(procedure_name)
+
+                    # remove the scope when procedure ends
+                    self.__write_to_sym_file()
+                    self.symbol_table.delete_scope()
                 else:
                     self.__error("SyntaxError", f"Procedure parameter list is not closed, instead got {token.recognized_string}")
             else:
@@ -356,24 +346,24 @@ class Parser:
         else:
             self.__error("SyntaxError", f"Procedure should be named after an identifier, instead got {token.recognized_string}")
 
-    def formalparlist(self) -> None:
+    def formalparlist(self, name: str) -> None:
         global token
         if token.family == "identifier":
-            self.varlist("formal-parameter")       
+            self.varlist("formalparlist", name)   
 
-    def funcblock(self, function_name) -> None:
+    def funcblock(self, function_name: str) -> None:
         global token
-        starting_quad = self.quad_ops.next_quad()   # probably
 
         if token.recognized_string == "διαπροσωπεία":
             token = self.get_token()
-            self.funcinput()
-            self.funcoutput()
+            self.funcinput(function_name)
+            self.funcoutput(function_name)
             self.declarations()
             self.subprograms()
             if token.recognized_string == "αρχή_συνάρτησης":
 
                 # code for the beginning of the function block
+                starting_quad = self.quad_ops.next_quad()   # probably?
                 self.quad_ops.gen_quad("begin_block", function_name, "_", "_")
 
                 token = self.get_token()
@@ -382,13 +372,13 @@ class Parser:
                     self.quad_ops.gen_quad("end_block", function_name, "_", "_")
                     token = self.get_token()
 
-                    # probably?
-                    framelength = self.symbol_table.scope_list[-1].offset + 4   # to get total bytes
+                    # probably
+                    framelength = self.symbol_table.scope_list[-1].offset
 
                     # all info is available, fill missing 
                     function = self.symbol_table.search_entity(function_name)
                     function.starting_quad = starting_quad
-                    function.framelength = framelength
+                    function.frame_length = framelength
 
                 else:
                     self.__error("SyntaxError", f"Unclosed function block, expected 'τέλος_συνάρτησης' keyword, instead got {token.recognized_string}")
@@ -399,19 +389,19 @@ class Parser:
 
     def procblock(self, procedure_name) -> None:
         global token
-        starting_quad = self.quad_ops.next_quad()   # probably
 
         if token.recognized_string == "διαπροσωπεία":
             token = self.get_token()
-            self.funcinput()
+            self.funcinput(procedure_name)
 
             # should it even be here
-            self.funcoutput()
+            self.funcoutput(procedure_name)
             self.declarations()
             self.subprograms()
             if token.recognized_string == "αρχή_διαδικασίας":
 
                 # code for the beginning of the procedure block
+                starting_quad = self.quad_ops.next_quad()   # probably
                 self.quad_ops.gen_quad("begin_block", procedure_name, "_", "_")
 
                 token = self.get_token()
@@ -421,12 +411,12 @@ class Parser:
                     self.quad_ops.gen_quad("end_block", procedure_name, "_", "_")
 
                     # probably?
-                    framelength = self.symbol_table.scope_list[-1].offset + 4   # to get total bytes
+                    framelength = self.symbol_table.scope_list[-1].offset + 4   # to get total bytes of the current scope
 
                     # all info is available, fill missing 
                     procedure = self.symbol_table.search_entity(procedure_name)
                     procedure.starting_quad = starting_quad
-                    procedure.framelength = framelength
+                    procedure.frame_length = framelength
 
                     token = self.get_token()
                 else:
@@ -436,19 +426,18 @@ class Parser:
         else:
             self.__error("SyntaxError", f"Procedure block's 'διαπροσωπεία' is missing, instead got {token.recognized_string}")
 
-    def funcinput(self) -> None:
+    def funcinput(self, function_name: str) -> None:
         global token
         if token.recognized_string == "είσοδος":
             token = self.get_token()
-            self.varlist("formal-parameter")  # formal parameter? probably
+            self.varlist("funcinput", function_name)
 
-    def funcoutput(self) -> None:
+    def funcoutput(self, function_name: str) -> None:
         global token
         if token.recognized_string == "έξοδος":
             token = self.get_token()
-            self.varlist("formal-parameter")  # formal parameter?
+            self.varlist("funcoutput", function_name)  
 
-    # return last 
     def sequence(self) -> None:
         global token
         self.statement()
@@ -572,27 +561,38 @@ class Parser:
             token = self.get_token()
             if token.recognized_string == ":=":
                 token = self.get_token()
+
                 start_value = self.expression()   # the starting value for the for loop
                 self.quad_ops.gen_quad(":=", start_value, "_", start_variable)
 
                 if token.recognized_string == "έως":
                     token = self.get_token()
+
                     end_value = self.expression() # the ending value for the for loop
+                    end_temp_variable = self.quad_ops.new_temp()
+                    self.quad_ops.gen_quad(":=", end_value, "_", end_temp_variable)
 
                     step_value = self.step()  # step returns step if "with step" exists else returns zero (strings)
+                    step_temp_variable = self.quad_ops.new_temp()
+                    self.quad_ops.gen_quad(":=", step_value, "_", step_temp_variable)
 
-                    # certain sequencies are performed, jump to end if the number of iterations is done, else to starting quad
                     if token.recognized_string == "επανάλαβε":
                         token = self.get_token()
 
                         # to determine jump condition
                         if int(step_value) >= 0:
-                            pass
+                            jump_operation = "<"
                         else:
-                            pass
+                            jump_operation = ">"
+                        
+                        start_quad = self.quad_ops.next_quad()  # keep the first quad of the sequence
 
                         self.sequence()
-
+                        
+                        # perform addition and check
+                        self.quad_ops.gen_quad("+", start_variable, step_temp_variable, start_variable)
+                        #self.quad_ops.gen_quad('')
+                        self.quad_ops.gen_quad(jump_operation, start_variable, end_temp_variable, start_quad)
 
                         if token.recognized_string == "για_τέλος":
                             token = self.get_token()
@@ -635,6 +635,7 @@ class Parser:
 
             token = self.get_token()
             if token.recognized_string == "(":
+
                 self.idtail(id_name)
 
                 # here call
@@ -663,8 +664,7 @@ class Parser:
         if token.recognized_string == "(":
             token = self.get_token()
             self.actualpars()
-            return id_name, "function-procedure"
-            #here was a call stat, did not work for functions, moved to call_stat
+            return id_name, "function"
 
         return id_name, "no-tail"
 
@@ -799,8 +799,7 @@ class Parser:
 
             w = self.quad_ops.new_temp()
 
-            self.symbol_table.add_entity(TemporaryVariable(w, self.symbol_table.scope_list[-1].offset))
-            self.symbol_table.scope_list[-1].offset += SYMBOL_TABLE_STEP
+            self.symbol_table.add_entity(TemporaryVariable(w, "int", self.symbol_table.scope_list[-1].offset))
 
             self.quad_ops.gen_quad(add_oper_symbol, term_1_place, term_2_place, w)
             term_1_place = w
@@ -817,8 +816,7 @@ class Parser:
 
             w = self.quad_ops.new_temp()
 
-            self.symbol_table.add_entity(TemporaryVariable(w, self.symbol_table.scope_list[-1].offset))
-            self.symbol_table.scope_list[-1].offset += SYMBOL_TABLE_STEP
+            self.symbol_table.add_entity(TemporaryVariable(w, "int", self.symbol_table.scope_list[-1].offset))
 
             self.quad_ops.gen_quad(mul_oper_symbol, factor_1_place, factor_2_place, w)
             factor_1_place = w
@@ -856,14 +854,14 @@ class Parser:
             factor_place, type = self.idtail(id_name)
 
             # place it into symbol table?
-            if type == "function-procedure":
+            if type == "function":
                 w = self.quad_ops.new_temp()
 
-                self.symbol_table.add_entity(TemporaryVariable(w, self.symbol_table.scope_list[-1].offset))
-                self.symbol_table.scope_list[-1].offset += 4
+                self.symbol_table.add_entity(TemporaryVariable(w, "int", self.symbol_table.scope_list[-1].offset))
 
                 self.quad_ops.gen_quad("par", w, "ret", "_")
                 self.quad_ops.gen_quad("call", id_name, "_", "_")
+
                 factor_place = w
 
             # propably return the name, if function the function, else the identifier
@@ -919,9 +917,15 @@ class Parser:
     def __success_exit(self):
         for quad in self.generated_program:
             self.quads.write(str(quad) + "\n")
+
         self.quads.close()
         self.tokens.close()
+        self.table.close()
         exit(1)
+
+    def __write_to_sym_file(self):
+        write_values = self.symbol_table.print_table()
+        self.table.write(write_values)
 
     def __set_up_log(self):
         path = os.path.abspath(os.getcwd() + "/log")
@@ -930,6 +934,25 @@ class Parser:
         
         os.makedirs(path)
     
+    def __manage_varlist(self, caller: str, id_name: str, function_name: str) -> None:
+        if caller == "declarations":
+            self.symbol_table.add_entity(Variable(id_name, "int", self.symbol_table.scope_list[-1].offset))
+        elif caller == "formalparlist":
+            function = self.symbol_table.search_entity(function_name)
+            self.symbol_table.add_argument(function, FormalParameter(id_name, "int", "_"))    # fill later
+        elif caller == "funcinput":
+            self.symbol_table.add_entity(Parameter(id_name, self.symbol_table.scope_list[-1].offset, "int", "CV"))
+            formal_parameter = self.symbol_table.find_argument(function_name, id_name)
+            if formal_parameter == None:
+                self.__error("SemanticError", "Argument does not exist")
+            formal_parameter.mode = "CV"
+        elif caller == "funcoutput":
+            self.symbol_table.add_entity(Parameter(id_name, self.symbol_table.scope_list[-1].offset, "int", "REF"))
+            formal_parameter = self.symbol_table.find_argument(function_name, id_name)
+            if formal_parameter == None:
+                self.__error("SemanticError", "Argument does not exist")
+            formal_parameter.mode = "REF"
+
 class Quad:
 
     def __init__(self, label: str, op: str, op1: str, op2:str, op3:str) -> None:
@@ -993,10 +1016,16 @@ class Variable(Entity):
         self.datatype: int = datatype
         self.offset: int = offset
 
+    def __str__(self):
+        return f'Variable: Name: {self.name}, Datatype: {self.datatype}, Offset: {self.offset}\n' 
+
 class TemporaryVariable(Variable):
 
-    def __init__(self, name: str, offset: int) -> None:
-        super().__init__(name, offset)
+    def __init__(self, name: str, datatype: str, offset: int) -> None:
+        super().__init__(name, datatype, offset)
+
+    def __str__(self):
+        return f'Temporary Variable: Name: {self.name}, Datatype: {self.datatype}, Offset: {self.offset}\n'
 
 class FormalParameter(Entity):
 
@@ -1005,12 +1034,21 @@ class FormalParameter(Entity):
         self.datatype: int = datatype
         self.mode: int = mode
 
-# might remove it
-class Parameter(Variable, FormalParameter):
+    def __str__(self):
+        return f'Formal Parameter: Name: {self.name}, Datatype: {self.datatype}, Mode: {self.mode}\n'
+
+class Parameter(Entity):
 
     def __init__(self, name: str, offset: int, datatype: int, mode: int) -> None:
-        Variable.__init__(self, name, datatype, offset)
-        FormalParameter.__init__(self, name, datatype, mode)
+        #Variable.__init__(self, name, datatype, offset)
+        #FormalParameter.__init__(self, name, datatype, mode)
+        super().__init__(name)
+        self.offset = offset
+        self.datatype = datatype
+        self.mode = mode
+    
+    def __str__(self):
+        return f'Parameter: Name: {self.name}, Offset: {self.offset}, Datatype: {self.datatype}, Mode: {self.mode}\n'
 
 class Procedure(Entity):
 
@@ -1018,7 +1056,14 @@ class Procedure(Entity):
         super().__init__(name)
         self.starting_quad_label: int = starting_quad_label
         self.frame_length: int = frame_length
-        self.arguments: List[Argument] = []
+        self.arguments: List[FormalParameter] = []
+
+    def __str__(self):
+        proc =  f'Procedure: Name: {self.name}, Startind Quad Label: {self.starting_quad_label}, Frame Length: {self.frame_length}\n'
+        args = f'\t\tFormal Parameters of procedure {self.name}: \n'
+        for formalpar in self.arguments:
+            args += f'\t\t\t{formalpar}' 
+        return proc+args
 
 class Function(Procedure):
 
@@ -1026,16 +1071,16 @@ class Function(Procedure):
         super().__init__(name, starting_quad_label, frame_length)
         self.datatype: int = datatype
 
-class Argument():
-
-    def __init__(self, par_mode: int, datatype: int) -> None:
-        self.par_mode: int = par_mode
-        self.type: int = datatype
+    def __str__(self):
+        func = f'Function: Name: {self.name}, Startind Quad Label: {self.starting_quad_label}, Datatype: {self.datatype}, Frame Length: {self.frame_length}\n'
+        args = f'\t\tFormal Parameters of function {self.name}: \n'
+        for formalpar in self.arguments:
+            args += f'\t\t\t{formalpar}' 
+        return func+args
+    
 
 class Scope():
 
-    # where to store arguments?
-    # arguments is a dictionary(key value, entity name, argument)
     def __init__(self, nesting_level) -> None:
         self.entity_list: List[Entity] = []
         self.nesting_level: int = nesting_level
@@ -1046,30 +1091,42 @@ class Table():
     def __init__(self) -> None:
         self.scope_list: List[Scope] = []
 
+    def print_table(self)  -> str:
+        global NESTING_LEVEL
+        current_level: int = NESTING_LEVEL
+        accumulator = ''
+        while current_level >= 0:
+            header = f'Level {current_level}\n'
+            print(header)
+            accumulator += header
+            for entity in self.scope_list[current_level].entity_list:
+                body = f'\t{entity}'
+                print(body)
+                accumulator += body
+            current_level -= 1
+        
+        return accumulator
+
     # might need some changes
     def add_scope(self) -> None:
         global NESTING_LEVEL
         NESTING_LEVEL += 1
         self.scope_list.append(Scope(NESTING_LEVEL))
 
-    # will automatically delete everything, decrease nesting level
     def delete_scope(self) -> None:
         global NESTING_LEVEL
         self.scope_list.pop()
         NESTING_LEVEL -= 1
 
-    # to current scope of course
     def add_entity(self, entity: Entity) -> None:
         scope = self.scope_list[-1]
         scope.entity_list.append(entity)
         scope.offset += 4
 
+    def add_argument(self, entity: Entity, argument: FormalParameter):
+        #self.scope_list[-1].entity_list[-1].arguments.append(argument)
+        entity.arguments.append(argument)
 
-    # to current scope, to some entity(function or procedure)
-    def add_argument(self, entity: Entity, argument: Argument):
-        self.scope_list[-1].entity_list[-1].arguments.append[argument]
-
-    # search the symbol table, go from level x until level 0(searches also at level 0)
     def search_entity(self, name: str) -> Entity:
         current_level: int = NESTING_LEVEL
         while current_level != -1:
@@ -1078,6 +1135,14 @@ class Table():
                 if entity.name == name:
                     return entity
             current_level -= 1
+    
+    def find_argument(self, function_name: str, argument_name: str) -> FormalParameter:
+        function = self.search_entity(function_name)
+        for argument in function.arguments:
+            if argument.name == argument_name:
+                return argument
+        
+        return None
 
 #Usage: type in terminal python3 compiler.py your_file_name
 if __name__ == "__main__":

@@ -14,3 +14,8 @@
 1. add code for symbol table
 2. interm code for stat
 3. let or change interm code for program inputs and outputs
+
+# new
+
+1. passing of args to functions symbol table
+2. see for stat
