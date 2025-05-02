@@ -1123,6 +1123,8 @@ class Table():
     def add_entity(self, entity: Entity) -> None:
         scope = self.scope_list[-1]
         scope.entity_list.append(entity)
+        if isinstance(entity, Function) or isinstance(entity, Procedure):
+            return
         scope.offset += 4
 
     def add_argument(self, entity: Entity, argument: FormalParameter):
