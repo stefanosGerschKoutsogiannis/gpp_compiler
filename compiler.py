@@ -3,7 +3,7 @@
 
 # IMPORTANT, PLEASE READ ME, IT ONLY TAKES ONE MINUTE
 # note: sometimes read(char) works unexpectedly when moving file descriptor pointer back
-# to avoid it, add spaces between all characters
+# to avoid it, add spaces between all characters(safe option)
 
 import string
 import sys
@@ -105,7 +105,7 @@ class Lex:
             while character in DIGITS:
                 recognized_token += character
                 # add bound
-                if int(recognized_token) > 10000:
+                if int(recognized_token) > 32767 or int(recognized_token) < -32767:
                     self.__error("NumberOutOfRangeError", f"{recognized_token} exceeds maximum number supported")
                 character = self.__read_character()
                 if character in LETTERS:
@@ -718,7 +718,7 @@ class Parser:
             boolterm_2_place = self.boolterm()
             
             condition_true = self.quad_ops.merge_list(condition_true, boolterm_2_place[0])
-            condition_false = boolterm_2_place[1] # Q2_false
+            condition_false = boolterm_2_place[1] 
 
         return condition_true, condition_false
 
@@ -773,7 +773,7 @@ class Parser:
                 return boolfactor_true, boolfactor_false
             else:
                 self.__error("SyntaxError", f"Unclosed condition, expected '], instead got {token.recognized_string}")
-        elif token.family in ["digit", "identifier"] or token.recognized_string == "(":
+        else:
             expression_1_place = self.expression()
             rel_oper_symbol = self.relational_oper()
             expression_2_place = self.expression()
@@ -785,14 +785,19 @@ class Parser:
 
             return boolfactor_true, boolfactor_false
 
-        else:
-            self.__error("SyntaxError", f"Not a valid condition")
 
     def expression(self) -> str:
         global token
         # add it?
         opt_sign = self.optional_sign()
-        term_1_place = opt_sign + self.term()
+        if opt_sign == "+" or opt_sign == '':
+            term_1_place = self.term()
+        else:
+            value = self.term()
+            w = self.quad_ops.new_temp()
+            self.quad_ops.gen_quad(opt_sign, "0", value, w)
+            term_1_place = w
+        #term_1_place = opt_sign + self.term()
         while token.family == "addOper":
             add_oper_symbol = self.add_oper()
             term_2_place = self.term()
@@ -926,6 +931,7 @@ class Parser:
     def __write_to_sym_file(self):
         write_values = self.symbol_table.print_table()
         self.table.write(write_values)
+        self.table.write('\n\n')
 
     def __set_up_log(self):
         path = os.path.abspath(os.getcwd() + "/log")

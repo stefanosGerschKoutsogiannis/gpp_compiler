@@ -11,6 +11,8 @@ Level 0
 		Formal Parameters of function αύξηση: 
 			Formal Parameter: Name: α, Datatype: int, Mode: CV
 			Formal Parameter: Name: β, Datatype: int, Mode: REF
+
+
 Level 1
 	Parameter: Name: χ, Offset: 12, Datatype: int, Mode: CV
 	Temporary Variable: Name: T_2, Datatype: int, Offset: 16
@@ -25,6 +27,8 @@ Level 0
 	Procedure: Name: τύπωσε_συν_1, Startind Quad Label: _, Frame Length: 24
 		Formal Parameters of procedure τύπωσε_συν_1: 
 			Formal Parameter: Name: χ, Datatype: int, Mode: CV
+
+
 Level 0
 	Variable: Name: α, Datatype: int, Offset: 12
 	Variable: Name: β, Datatype: int, Offset: 16
@@ -45,3 +49,5 @@ Level 0
 	Temporary Variable: Name: T_9, Datatype: int, Offset: 56
 	Temporary Variable: Name: T_12, Datatype: int, Offset: 60
 	Temporary Variable: Name: T_13, Datatype: int, Offset: 64
+
+
