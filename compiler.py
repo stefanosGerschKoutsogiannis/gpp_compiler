@@ -41,11 +41,6 @@ BY_REFERENCE_OPERATOR = "%"
 
 TEMP_COUNTER = 0
 
-
-# codes for symbol table
-BY_VALUE = 0
-BY_REFERENCE = 1
-SYMBOL_TABLE_STEP = 4
 SYMBOL_TABLE_START = 12 # in bytes
 NESTING_LEVEL = -1    # at the start, incr to zero
 
@@ -363,8 +358,8 @@ class Parser:
             if token.recognized_string == "αρχή_συνάρτησης":
 
                 # code for the beginning of the function block
-                starting_quad = self.quad_ops.next_quad()   # probably?
                 self.quad_ops.gen_quad("begin_block", function_name, "_", "_")
+                starting_quad = self.quad_ops.next_quad()   # first executable command
 
                 token = self.get_token()
                 self.sequence()
@@ -401,8 +396,8 @@ class Parser:
             if token.recognized_string == "αρχή_διαδικασίας":
 
                 # code for the beginning of the procedure block
-                starting_quad = self.quad_ops.next_quad()   # probably
                 self.quad_ops.gen_quad("begin_block", procedure_name, "_", "_")
+                starting_quad = self.quad_ops.next_quad()   # first executable command
 
                 token = self.get_token()
                 self.sequence()
@@ -552,6 +547,7 @@ class Parser:
         else:
             self.__error("SyntaxError", f"Expeted 'μέχρι', instead got {token.recognized_string}")
 
+    # needs two jumps to work perfectly, fix it
     def for_stat(self) -> None:
         global token
         if token.family == "identifier":
@@ -658,7 +654,7 @@ class Parser:
 
         return "1"
 
-    # here add ret value
+    # functions calling others do not work well, find the bug
     def idtail(self, id_name) -> Tuple[str, str]:
         global token
         if token.recognized_string == "(":
@@ -1153,8 +1149,8 @@ class Table():
 #Usage: type in terminal python3 compiler.py your_file_name
 if __name__ == "__main__":
 
-    file = "test/test.gpp"
-    #file = sys.argv[1]
+    #file = "test/simple.gpp"
+    file = sys.argv[1]
     lex: Lex = Lex(file)
     parser: Parser = Parser(lex)
     parser.syntax_analyzer()    
