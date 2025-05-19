@@ -371,7 +371,7 @@ class Parser:
                     framelength = self.symbol_table.scope_list[-1].offset
 
                     # all info is available, fill missing 
-                    function = self.symbol_table.search_entity(function_name)
+                    function, _ = self.symbol_table.search_entity(function_name)
                     function.starting_quad = starting_quad
                     function.frame_length = framelength
 
@@ -409,7 +409,7 @@ class Parser:
                     framelength = self.symbol_table.scope_list[-1].offset + 4   # to get total bytes of the current scope
 
                     # all info is available, fill missing 
-                    procedure = self.symbol_table.search_entity(procedure_name)
+                    procedure, _ = self.symbol_table.search_entity(procedure_name)
                     procedure.starting_quad = starting_quad
                     procedure.frame_length = framelength
 
@@ -577,18 +577,23 @@ class Parser:
 
                         # to determine jump condition
                         if int(step_value) >= 0:
-                            jump_operation = "<"
+                            jump_operation = ">="
                         else:
-                            jump_operation = ">"
-                        
-                        start_quad = self.quad_ops.next_quad()  # keep the first quad of the sequence
+                            jump_operation = "<="
 
+                        check_quad = self.quad_ops.next_quad()
+                        fill_out = self.quad_ops.make_list(check_quad)
+                        self.quad_ops.gen_quad(jump_operation, start_variable, end_temp_variable, "_")
+                    
                         self.sequence()
                         
-                        # perform addition and check
+                        # perform addition and go to check
                         self.quad_ops.gen_quad("+", start_variable, step_temp_variable, start_variable)
-                        #self.quad_ops.gen_quad('')
-                        self.quad_ops.gen_quad(jump_operation, start_variable, end_temp_variable, start_quad)
+                        self.quad_ops.gen_quad("jump", "_", "_", check_quad)
+
+                        # fill jump out
+                        self.quad_ops.back_patch(fill_out, self.quad_ops.next_quad())
+                
 
                         if token.recognized_string == "για_τέλος":
                             token = self.get_token()
@@ -940,7 +945,7 @@ class Parser:
         if caller == "declarations":
             self.symbol_table.add_entity(Variable(id_name, "int", self.symbol_table.scope_list[-1].offset))
         elif caller == "formalparlist":
-            function = self.symbol_table.search_entity(function_name)
+            function, _ = self.symbol_table.search_entity(function_name)
             self.symbol_table.add_argument(function, FormalParameter(id_name, "int", "_"))    # fill later
         elif caller == "funcinput":
             self.symbol_table.add_entity(Parameter(id_name, self.symbol_table.scope_list[-1].offset, "int", "CV"))
@@ -973,12 +978,18 @@ class QuadList:
         self.program_list: List[Quad] = []
         self.quad_counter: int = 0
 
-    # -.- 
+    # new version is better
+    '''
     def back_patch(self, list:List[str], label: str):
         for quad in self.program_list:
             for quad_label in list:
                 if quad.label == quad_label:
                     quad.op3 = label
+    '''
+
+    def back_patch(self, list: List[str], label: str) -> None:
+        for quad_label in list:
+            self.program_list[int(quad_label)-1].op3 = label
 
     def gen_quad(self, op: str, op1: str, op2: str, op3: str):
         self.quad_counter += 1
@@ -987,9 +998,9 @@ class QuadList:
         return generated_quad
 
     # needs fixing
-    def next_quad(self) -> int:
+    def next_quad(self) -> str:
         #self.quad_counter += 1
-        return self.quad_counter+1
+        return f"{self.quad_counter+1}"
 
     def empty_list(self) -> List[str]:
         return []
@@ -1139,20 +1150,110 @@ class Table():
                 if entity.name == name:
                     return entity
             current_level -= 1
+
+    def search_entity(self, name: str) -> Tuple[Entity, int]:
+        levels_up: int = 0
+        for scope in reversed(self.scope_list):
+            for entity in scope.entity_list:
+                if entity.name == name:
+                    return entity, levels_up
+            levels_up += 1
     
     def find_argument(self, function_name: str, argument_name: str) -> FormalParameter:
-        function = self.search_entity(function_name)
+        function, _ = self.search_entity(function_name)
         for argument in function.arguments:
             if argument.name == argument_name:
                 return argument
         
         return None
 
+
+    def __check_if_entity_exists(self, name: str, entity_types: Tuple[str]) -> Tuple[str, str]:
+        entity, _ = self.search_entity(name)
+        if entity == None:
+            return "SemanticError", f"Entity {name} does not exist"
+
+        return entity
+    
+    def __check_if_already_declared_in_scope(self, name: str, entity_type: Tuple[str, str]) -> Tuple[str, str]:
+        scope: Scope = self.scope_list[-1] #current scope
+        for entity in scope:
+            if entity.name == name:
+                return ""
+        return "SemanticError", f"Entity {name} is not declared in the current scope"
+    
+
+class Assembler():
+
+    def __init__(self, file, symbol_table: Table):
+        self.file = file
+        self.symbol_table: Table = symbol_table
+
+    """
+    stores into t0 the address of a non local variable
+    finds from the symbol table how many levels up(down) the local variable exists
+    and through the access link it finds it
+    """
+    def gnvlcode(self, name: str):
+        # bug, searches also in each own scope
+        self.file.write("lw t0, -4(sp)\n")  # parent stack
+        entity, levels_up = self.symbol_table.search_entity(name)
+
+        # should not be none, semantic analysis before hand
+        if entity != None:
+            for i in range(levels_up-1):    # -current that we jump in the beginning?
+                self.file.write("lw t0, -4(sp)")
+
+            if isinstance(entity, Variable) or isinstance(entity, Parameter):
+                self.file.write(f"addi t0, t0, -{entity.offset}")
+
+
+
+    """
+    load data into register r
+    the loading can happen from memory
+    or assign an immidiate to register r
+    """
+    def loadvr(self, value: str, register: str):
+        
+        if value.lstrip("-") in DIGITS:
+            self.file.write(f"li {register}, {value}\n")
+        
+        else:
+
+            entity, levels_up = self.symbol_table.search_entity(value)
+            entity_scope = self.symbol_table.scope_list[levels_up-1]
+            
+            # global variable, exists in main frame
+            if entity_scope.nesting_level == 0 and (isinstance(entity, Variable) or isinstance(entity, TemporaryVariable)):
+                self.file.write(f"lw {register}, -{entity.offset}(gt)")
+            elif entity_scope.nesting_level == self.symbol_table.scope_list[-1].nesting_level and (isinstance(entity, Variable) or (isinstance(entity, FormalParameter) and entity.mode == "CV") or isinstance(entity, TemporaryVariable)):
+                self.file.write(f"lw {register}, -{entity.offset}(sp)")
+            elif entity_scope.nesting_level == self.symbol_table.scope_list[-1].nesting_level and (isinstance(entity, FormalParameter) and entity.mode == "REF"):
+                asm_code = f"lw t0, -{entity.offset}(sp)\nlw {register}, (t0)\n"
+                self.file.write(asm_code)
+            # check again
+            elif entity_scope.nesting_level > 0 and (isinstance(entity, Variable) or (isinstance(entity, FormalParameter) and entity.mode == "CV")):
+                self.gnvlcode(value)
+                self.file.write(f"lw {register}, (t0)\n")
+            elif entity_scope.nesting_level > 0 and (isinstance(entity, FormalParameter) and entity.mode == "REF"):
+                self.gnvlcode(value)
+                asm_code = f"lw t0, (t0)\nlw {register}, (t0)"
+
+
+    """
+    load data from the register r into memory(variable v)
+    """
+    def storerv(self, register, value):
+        pass
+        
+
+
 #Usage: type in terminal python3 compiler.py your_file_name
 if __name__ == "__main__":
 
-    #file = "test/simple.gpp"
-    file = sys.argv[1]
+    file = "test/simple.gpp"
+    #file = sys.argv[1]
     lex: Lex = Lex(file)
     parser: Parser = Parser(lex)
     parser.syntax_analyzer()    
