@@ -58,10 +58,10 @@ class Lex:
 
     def __init__(self, file_name:string) -> None:
         self.current_line = 1
-        self.file_name = file_name
+        self.parser.final_name = file_name
         self.token = None
 
-        self.file = open(self.file_name, 'r', encoding="utf-8")
+        self.parser.final = open(self.parser.final_name, 'r', encoding="utf-8")
 
     def next_token(self)  -> Token:
         recognized_token: str = ""
@@ -175,13 +175,13 @@ class Lex:
             self.__error("InvalidCharacterError", f"Character {recognized_token} is not supported")
     
     def __read_character(self) -> chr:
-        return self.file.read(1)
+        return self.parser.final.read(1)
 
     def __create_token(self, recognized_token: str, family: str) -> Token:
         return Token(recognized_token, family, self.current_line)
     
     def __move_fp_back(self) -> None:
-        self.file.seek(self.file.tell() - 1)
+        self.parser.final.seek(self.parser.final.tell() - 1)
 
     def __error(self, error_type, msg):
         print(f"{error_type} ({self.current_line}): {msg}")
@@ -192,11 +192,11 @@ class Parser:
     def __init__(self, lex: Lex) -> None:
         self.lex: Lex = lex
         self.__set_up_log()
+        self.__set_up_asm_file()
         self.tokens = open("log/tokens.txt", "a")
         self.quads = open("log/quadlist.int", "a")
         self.table = open("log/table.sym", "a")
-        # symbol table log
-        # new code
+        self.final = open("final.asm", "a")
         self.quad_ops: QuadList = QuadList()
         self.generated_program = self.quad_ops.program_list
 
@@ -368,10 +368,10 @@ class Parser:
                     token = self.get_token()
 
                     # probably
-                    framelength = self.symbol_table.scope_list[-1].offset
+                    framelength = self.parser.symbol_table.scope_list[-1].offset
 
                     # all info is available, fill missing 
-                    function, _ = self.symbol_table.search_entity(function_name)
+                    function, _ = self.parser.symbol_table.search_entity(function_name)
                     function.starting_quad = starting_quad
                     function.frame_length = framelength
 
@@ -406,10 +406,10 @@ class Parser:
                     self.quad_ops.gen_quad("end_block", procedure_name, "_", "_")
 
                     # probably?
-                    framelength = self.symbol_table.scope_list[-1].offset + 4   # to get total bytes of the current scope
+                    framelength = self.parser.symbol_table.scope_list[-1].offset + 4   # to get total bytes of the current scope
 
                     # all info is available, fill missing 
-                    procedure, _ = self.symbol_table.search_entity(procedure_name)
+                    procedure, _ = self.parser.symbol_table.search_entity(procedure_name)
                     procedure.starting_quad = starting_quad
                     procedure.frame_length = framelength
 
@@ -805,7 +805,7 @@ class Parser:
 
             w = self.quad_ops.new_temp()
 
-            self.symbol_table.add_entity(TemporaryVariable(w, "int", self.symbol_table.scope_list[-1].offset))
+            self.symbol_table.add_entity(TemporaryVariable(w, "int", self.parser.symbol_table.scope_list[-1].offset))
 
             self.quad_ops.gen_quad(add_oper_symbol, term_1_place, term_2_place, w)
             term_1_place = w
@@ -822,7 +822,7 @@ class Parser:
 
             w = self.quad_ops.new_temp()
 
-            self.symbol_table.add_entity(TemporaryVariable(w, "int", self.symbol_table.scope_list[-1].offset))
+            self.symbol_table.add_entity(TemporaryVariable(w, "int", self.parser.symbol_table.scope_list[-1].offset))
 
             self.quad_ops.gen_quad(mul_oper_symbol, factor_1_place, factor_2_place, w)
             factor_1_place = w
@@ -863,7 +863,7 @@ class Parser:
             if type == "function":
                 w = self.quad_ops.new_temp()
 
-                self.symbol_table.add_entity(TemporaryVariable(w, "int", self.symbol_table.scope_list[-1].offset))
+                self.symbol_table.add_entity(TemporaryVariable(w, "int", self.parser.symbol_table.scope_list[-1].offset))
 
                 self.quad_ops.gen_quad("par", w, "ret", "_")
                 self.quad_ops.gen_quad("call", id_name, "_", "_")
@@ -936,25 +936,31 @@ class Parser:
 
     def __set_up_log(self):
         path = os.path.abspath(os.getcwd() + "/log")
-        if Path(os.path.abspath(os.getcwd() + "/log")).exists():
+        print(os.getcwd())
+        if Path(path).exists():
             shutil.rmtree(path)
         
         os.makedirs(path)
+
+    def __set_up_asm_file(self):
+        path = os.path.abspath(os.getcwd() + "/final.asm")
+        if os.path.isfile(path):
+            os.remove(path)
     
     def __manage_varlist(self, caller: str, id_name: str, function_name: str) -> None:
         if caller == "declarations":
-            self.symbol_table.add_entity(Variable(id_name, "int", self.symbol_table.scope_list[-1].offset))
+            self.symbol_table.add_entity(Variable(id_name, "int", self.parser.symbol_table.scope_list[-1].offset))
         elif caller == "formalparlist":
-            function, _ = self.symbol_table.search_entity(function_name)
+            function, _ = self.parser.symbol_table.search_entity(function_name)
             self.symbol_table.add_argument(function, FormalParameter(id_name, "int", "_"))    # fill later
         elif caller == "funcinput":
-            self.symbol_table.add_entity(Parameter(id_name, self.symbol_table.scope_list[-1].offset, "int", "CV"))
+            self.symbol_table.add_entity(Parameter(id_name, self.parser.symbol_table.scope_list[-1].offset, "int", "CV"))
             formal_parameter = self.symbol_table.find_argument(function_name, id_name)
             if formal_parameter == None:
                 self.__error("SemanticError", "Argument does not exist")
             formal_parameter.mode = "CV"
         elif caller == "funcoutput":
-            self.symbol_table.add_entity(Parameter(id_name, self.symbol_table.scope_list[-1].offset, "int", "REF"))
+            self.symbol_table.add_entity(Parameter(id_name, self.parser.symbol_table.scope_list[-1].offset, "int", "REF"))
             formal_parameter = self.symbol_table.find_argument(function_name, id_name)
             if formal_parameter == None:
                 self.__error("SemanticError", "Argument does not exist")
@@ -1142,6 +1148,7 @@ class Table():
         #self.scope_list[-1].entity_list[-1].arguments.append(argument)
         entity.arguments.append(argument)
 
+    ''' 
     def search_entity(self, name: str) -> Entity:
         current_level: int = NESTING_LEVEL
         while current_level != -1:
@@ -1150,6 +1157,7 @@ class Table():
                 if entity.name == name:
                     return entity
             current_level -= 1
+    '''
 
     def search_entity(self, name: str) -> Tuple[Entity, int]:
         levels_up: int = 0
@@ -1158,6 +1166,8 @@ class Table():
                 if entity.name == name:
                     return entity, levels_up
             levels_up += 1
+
+        return None
     
     def find_argument(self, function_name: str, argument_name: str) -> FormalParameter:
         function, _ = self.search_entity(function_name)
@@ -1182,12 +1192,11 @@ class Table():
                 return ""
         return "SemanticError", f"Entity {name} is not declared in the current scope"
     
-
+# coding mess
 class Assembler():
-
-    def __init__(self, file, symbol_table: Table):
-        self.file = file
-        self.symbol_table: Table = symbol_table
+        
+    def __init__(self, parser: Parser):
+        self.parser = parser
 
     """
     stores into t0 the address of a non local variable
@@ -1196,57 +1205,159 @@ class Assembler():
     """
     def gnvlcode(self, name: str):
         # bug, searches also in each own scope
-        self.file.write("lw t0, -4(sp)\n")  # parent stack
-        entity, levels_up = self.symbol_table.search_entity(name)
+        self.parser.final.write("lw t0, -4(sp)\n")  # currect link
+        entity, levels_up = self.parser.symbol_table.search_entity(name)
 
         # should not be none, semantic analysis before hand
         if entity != None:
-            for i in range(levels_up-1):    # -current that we jump in the beginning?
-                self.file.write("lw t0, -4(sp)")
+            for i in range(levels_up-1):    # if two levels up, since current already loaded link access, only one more needed (level_up-1+1 levels above)
+                self.parser.final.write("lw t0, -4(sp)")
 
+            # non local variables
             if isinstance(entity, Variable) or isinstance(entity, Parameter):
-                self.file.write(f"addi t0, t0, -{entity.offset}")
+                self.parser.final.write(f"addi t0, t0, -{entity.offset}")
 
 
 
     """
-    load data into register r
+    load data(value) into register(register)
     the loading can happen from memory
     or assign an immidiate to register r
     """
     def loadvr(self, value: str, register: str):
         
+        # if value is an immidiate
         if value.lstrip("-") in DIGITS:
-            self.file.write(f"li {register}, {value}\n")
+            self.parser.final.write(f"li {register}, {value}\n")
         
         else:
 
-            entity, levels_up = self.symbol_table.search_entity(value)
-            entity_scope = self.symbol_table.scope_list[levels_up-1]
+
+            entity, levels_up = self.parser.symbol_table.search_entity(value)  # get entity and how many levels up above it is
+            entity_scope = self.parser.symbol_table.scope_list[levels_up]  # scope in which entity exists
+            current_scope = self.parser.symbol_table.scope_list[-1]
             
             # global variable, exists in main frame
             if entity_scope.nesting_level == 0 and (isinstance(entity, Variable) or isinstance(entity, TemporaryVariable)):
-                self.file.write(f"lw {register}, -{entity.offset}(gt)")
-            elif entity_scope.nesting_level == self.symbol_table.scope_list[-1].nesting_level and (isinstance(entity, Variable) or (isinstance(entity, FormalParameter) and entity.mode == "CV") or isinstance(entity, TemporaryVariable)):
-                self.file.write(f"lw {register}, -{entity.offset}(sp)")
-            elif entity_scope.nesting_level == self.symbol_table.scope_list[-1].nesting_level and (isinstance(entity, FormalParameter) and entity.mode == "REF"):
+                self.parser.final.write(f"lw {register}, -{entity.offset}(gp)")
+            
+            # value declared in the function that is executing  and it is local variable, formal parameter passed by value or temporary variable
+            elif entity_scope.nesting_level == current_scope.nesting_level and (isinstance(entity, Variable) or (isinstance(entity, FormalParameter) and entity.mode == "CV") or isinstance(entity, TemporaryVariable)):
+                self.parser.final.write(f"lw {register}, -{entity.offset}(sp)")
+
+            # value declared in the function that is executing and it is formal parameter that is passed by referrence
+            elif entity_scope.nesting_level == current_scope.nesting_level and (isinstance(entity, FormalParameter) and entity.mode == "REF"):
                 asm_code = f"lw t0, -{entity.offset}(sp)\nlw {register}, (t0)\n"
-                self.file.write(asm_code)
-            # check again
-            elif entity_scope.nesting_level > 0 and (isinstance(entity, Variable) or (isinstance(entity, FormalParameter) and entity.mode == "CV")):
+                self.parser.final.write(asm_code)
+
+            # value declared in some ancestor and it is local variable or formal parameter passed by value
+            # ancestor declared in previous level, nesting_level(ancestor) < nesting_level(current)
+            elif entity_scope.nesting_level < current_scope.nesting_level and (isinstance(entity, Variable) or (isinstance(entity, FormalParameter) and entity.mode == "CV")):
                 self.gnvlcode(value)
-                self.file.write(f"lw {register}, (t0)\n")
-            elif entity_scope.nesting_level > 0 and (isinstance(entity, FormalParameter) and entity.mode == "REF"):
+                self.parser.final.write(f"lw {register}, (t0)\n")
+
+            # value declared in some ancestor and it is local variable or formal parameter passed by referrence
+            elif entity_scope.nesting_level < current_scope.nesting_level and (isinstance(entity, FormalParameter) and entity.mode == "REF"):
                 self.gnvlcode(value)
                 asm_code = f"lw t0, (t0)\nlw {register}, (t0)"
+                self.parser.final.write(asm_code)
 
 
     """
-    load data from the register r into memory(variable v)
+    load data from the registe(register) into memory(variable v)
     """
-    def storerv(self, register, value):
-        pass
-        
+    def storerv(self, register: str, value: str):
+        entity, levels_up = self.parser.symbol_table.search_entity(value)  # get entity and how many levels up above it is
+        entity_scope = self.parser.symbol_table.scope_list[levels_up]  # scope in which entity exists
+        current_scope = self.parser.symbol_table.scope_list[-1]
+
+        # value is global variable, exist into main program
+        if entity_scope.nesting_level == 0 and (isinstance(entity, Variable) or isinstance(entity, TemporaryVariable)):
+            self.parser.final.write(f"sw {register}, -{entity.offset}(gp)")
+
+        # value is local variable, formal parameter passed by value and nesting level equal to the current, or temp variable
+        elif entity_scope.nesting_level == current_scope.nesting_level and (isinstance(entity, Variable) or (isinstance(entity, FormalParameter) and entity.mode == "CV") or isinstance(entity, TemporaryVariable)):
+            self.parser.final.write(f"sw {register}, -{entity.offset}(sp)")
+
+        # value is formal parameter passed by referrence and nesting level equal with the current
+        elif entity_scope.nesting_level == current_scope.nesting_level and (isinstance(entity, FormalParameter) and entity.mode == "REF"):
+            asm_code = f"lw t0, -{entity.offset}(sp)\nsw {register}, (t0)"
+            self.parser.final.write(asm_code)
+
+        # value is local variable, formal parameter passed by value and nesting level smaller than current
+        elif entity_scope.nesting_level < current_scope.nesting_level and (isinstance(entity, Variable) or (isinstance(entity, FormalParameter) and entity.mode == "CV")):
+            self.gnvlcode(value)
+            self.parser.final.write(f"sw {register}, (t0)")
+
+         # value is local variable, formal parameter passed by referrence and nesting level smaller than current
+        elif entity_scope.nesting_level < current_scope.nesting_level and (isinstance(entity, FormalParameter) and entity.mode == "REF"):
+            self.gnvlcode(value)
+            asm_code = f"lw t0, (t0)\nsw {register}, (t0)"
+            self.parser.final.write(asm_code)
+
+
+    def create_assembly_code(self):
+        asm_file = self.parser.final
+        for quad in self.parser.generated_program:
+            
+            asm_file.write(f"L{quad.label}:\n")
+
+            if quad.op == "inp":
+                asm_code = f"li a7, 63\necall\n"
+                asm_file.write(asm_code)
+                self.storerv("a0", quad.op1)
+            
+            elif quad.op == "out":
+                self.loadvr(quad.op1, "a0")
+                pass
+
+            elif quad.op == "halt":
+                asm_code = f"li a0, 0\nli a7, 93\necall"
+                asm_file.write(asm_code)
+
+            elif quad.op == "jump":
+                asm_file.write(f"b {quad.op3}")
+
+            elif quad.op in RELATIONAL_SYMBOLS:
+                symbol = quad.op
+                self.loadvr(quad.op1, "t1")
+                self.loadvr(quad.op2, "t2")
+                jump_label = quad.op3
+
+                if symbol == ">":
+                    asm_file.write(f"bqt t1, t2, {jump_label}\n")
+                elif symbol == ">=":
+                    asm_file.write(f"bge t1, t2, {jump_label}\n")
+                elif symbol == "<":
+                    asm_file.write(f"blt t1, t2, {jump_label}\n")
+                elif symbol == "<=":
+                    asm_file.write(f"ble t1, t2 {jump_label}\n")
+                elif symbol == "=":
+                    asm_file.write(f"beq t1, t2, {jump_label}\n")
+                elif symbol == "<>":
+                    asm_file.write(f"bne t1, t2, {jump_label}\n")
+
+            elif quad.op == ":=":
+                self.loadvr(quad.op1, "t1")
+                self.storerv("t1", quad.op3)
+
+            elif quad.op in ADD_OPERATORS+MUL_OPERATORS:
+                operation = quad.op
+                self.loadvr(quad.op1, "t1")
+                self.loadvr(quad.op2, "t2")
+
+                if operation == "+":
+                    asm_file.write(f"add t1, t1, t2")
+                elif operation == "-":
+                    asm_file.write(f"sub t1, t1, t2")
+                elif operation == "*":
+                    asm_file.write(f"mul t1, t1, t2")
+                elif operation == "/":
+                    asm_file.write(f"div t1, t1, t2")
+                
+                self.storerv("t1", quad.op3)
+
+            # ret value, parameter passing, begin/end block
 
 
 #Usage: type in terminal python3 compiler.py your_file_name
