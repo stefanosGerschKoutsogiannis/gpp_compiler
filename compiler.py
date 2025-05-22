@@ -5,6 +5,13 @@
 # note: sometimes read(char) works unexpectedly when moving file descriptor pointer back
 # to avoid it, add spaces between all characters(safe option)
 
+
+# some things do not work when they should have worked(eg starting_quad in symbol table not showing when printing/writing to file but shown in the entity when debugging, file pointer going wild when no spaces between some chars)
+# ret value not specified in interm code (I mean return_stat)
+# a function with parameters some functions is not producing the correct interm code
+# no semantic analysis
+# not fully implemented final code
+
 import string
 import sys
 import os
@@ -58,10 +65,10 @@ class Lex:
 
     def __init__(self, file_name:string) -> None:
         self.current_line = 1
-        self.parser.final_name = file_name
+        self.file_name = file_name
         self.token = None
 
-        self.parser.final = open(self.parser.final_name, 'r', encoding="utf-8")
+        self.file = open(self.file_name, 'r', encoding="utf-8")
 
     def next_token(self)  -> Token:
         recognized_token: str = ""
@@ -175,13 +182,13 @@ class Lex:
             self.__error("InvalidCharacterError", f"Character {recognized_token} is not supported")
     
     def __read_character(self) -> chr:
-        return self.parser.final.read(1)
+        return self.file.read(1)
 
     def __create_token(self, recognized_token: str, family: str) -> Token:
         return Token(recognized_token, family, self.current_line)
     
     def __move_fp_back(self) -> None:
-        self.parser.final.seek(self.parser.final.tell() - 1)
+        self.file.seek(self.file.tell() - 1)
 
     def __error(self, error_type, msg):
         print(f"{error_type} ({self.current_line}): {msg}")
@@ -368,10 +375,10 @@ class Parser:
                     token = self.get_token()
 
                     # probably
-                    framelength = self.parser.symbol_table.scope_list[-1].offset
+                    framelength = self.symbol_table.scope_list[-1].offset
 
                     # all info is available, fill missing 
-                    function, _ = self.parser.symbol_table.search_entity(function_name)
+                    function, _ = self.symbol_table.search_entity(function_name)
                     function.starting_quad = starting_quad
                     function.frame_length = framelength
 
@@ -805,7 +812,7 @@ class Parser:
 
             w = self.quad_ops.new_temp()
 
-            self.symbol_table.add_entity(TemporaryVariable(w, "int", self.parser.symbol_table.scope_list[-1].offset))
+            self.symbol_table.add_entity(TemporaryVariable(w, "int", self.symbol_table.scope_list[-1].offset))
 
             self.quad_ops.gen_quad(add_oper_symbol, term_1_place, term_2_place, w)
             term_1_place = w
@@ -822,7 +829,7 @@ class Parser:
 
             w = self.quad_ops.new_temp()
 
-            self.symbol_table.add_entity(TemporaryVariable(w, "int", self.parser.symbol_table.scope_list[-1].offset))
+            self.symbol_table.add_entity(TemporaryVariable(w, "int", self.symbol_table.scope_list[-1].offset))
 
             self.quad_ops.gen_quad(mul_oper_symbol, factor_1_place, factor_2_place, w)
             factor_1_place = w
@@ -863,7 +870,7 @@ class Parser:
             if type == "function":
                 w = self.quad_ops.new_temp()
 
-                self.symbol_table.add_entity(TemporaryVariable(w, "int", self.parser.symbol_table.scope_list[-1].offset))
+                self.symbol_table.add_entity(TemporaryVariable(w, "int", self.symbol_table.scope_list[-1].offset))
 
                 self.quad_ops.gen_quad("par", w, "ret", "_")
                 self.quad_ops.gen_quad("call", id_name, "_", "_")
@@ -949,18 +956,18 @@ class Parser:
     
     def __manage_varlist(self, caller: str, id_name: str, function_name: str) -> None:
         if caller == "declarations":
-            self.symbol_table.add_entity(Variable(id_name, "int", self.parser.symbol_table.scope_list[-1].offset))
+            self.symbol_table.add_entity(Variable(id_name, "int", self.symbol_table.scope_list[-1].offset))
         elif caller == "formalparlist":
-            function, _ = self.parser.symbol_table.search_entity(function_name)
+            function, _ = self.symbol_table.search_entity(function_name)
             self.symbol_table.add_argument(function, FormalParameter(id_name, "int", "_"))    # fill later
         elif caller == "funcinput":
-            self.symbol_table.add_entity(Parameter(id_name, self.parser.symbol_table.scope_list[-1].offset, "int", "CV"))
+            self.symbol_table.add_entity(Parameter(id_name, self.symbol_table.scope_list[-1].offset, "int", "CV"))
             formal_parameter = self.symbol_table.find_argument(function_name, id_name)
             if formal_parameter == None:
                 self.__error("SemanticError", "Argument does not exist")
             formal_parameter.mode = "CV"
         elif caller == "funcoutput":
-            self.symbol_table.add_entity(Parameter(id_name, self.parser.symbol_table.scope_list[-1].offset, "int", "REF"))
+            self.symbol_table.add_entity(Parameter(id_name, self.symbol_table.scope_list[-1].offset, "int", "REF"))
             formal_parameter = self.symbol_table.find_argument(function_name, id_name)
             if formal_parameter == None:
                 self.__error("SemanticError", "Argument does not exist")
@@ -1071,9 +1078,9 @@ class Parameter(Entity):
 
 class Procedure(Entity):
 
-    def __init__(self, name: str, starting_quad_label: int, frame_length: int) -> None:
+    def __init__(self, name: str, starting_quad_label: str, frame_length: int) -> None:
         super().__init__(name)
-        self.starting_quad_label: int = starting_quad_label
+        self.starting_quad_label: str = starting_quad_label
         self.frame_length: int = frame_length
         self.arguments: List[FormalParameter] = []
 
@@ -1086,7 +1093,7 @@ class Procedure(Entity):
 
 class Function(Procedure):
 
-    def __init__(self, name: str, starting_quad_label: int, datatype: int, frame_length: int) -> None:
+    def __init__(self, name: str, starting_quad_label: str, datatype: int, frame_length: int) -> None:
         super().__init__(name, starting_quad_label, frame_length)
         self.datatype: int = datatype
 
@@ -1192,7 +1199,7 @@ class Table():
                 return ""
         return "SemanticError", f"Entity {name} is not declared in the current scope"
     
-# coding mess
+# coding mess, refactor
 class Assembler():
         
     def __init__(self, parser: Parser):
@@ -1309,7 +1316,8 @@ class Assembler():
             
             elif quad.op == "out":
                 self.loadvr(quad.op1, "a0")
-                pass
+                asm_code = f"li a7, 1\necall"
+                asm_file.write()
 
             elif quad.op == "halt":
                 asm_code = f"li a0, 0\nli a7, 93\necall"
@@ -1358,6 +1366,11 @@ class Assembler():
                 self.storerv("t1", quad.op3)
 
             # ret value, parameter passing, begin/end block
+            # ret value not implemented correctly so no impl here
+
+            elif quad.op == "par":
+                pass
+
 
 
 #Usage: type in terminal python3 compiler.py your_file_name
