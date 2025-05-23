@@ -5,20 +5,24 @@
 # note: sometimes read(char) works unexpectedly when moving file descriptor pointer back
 # to avoid it, add spaces between all characters(safe option)
 
+"""
+NOTES:   
 
-# some things do not work when they should have worked(eg starting_quad in symbol table not showing when printing/writing to file but shown in the entity when debugging, file pointer going wild when no spaces between some chars)
-# ret value not specified in interm code (I mean return_stat)
-# a function with parameters some functions is not producing the correct interm code
-# no semantic analysis
-# not fully implemented final code
+1. final code is not used, did not create everything needed for the creation of it
+2. when printing and writing symbol table, starting quad is not filled, but in debugging
+3. Function calling with functions as inputs does not work properly
+4. No semantic analysis
+5. beware of the important note above, file pointer goes wild when there are not spaces 
+
+"""
 
 import string
 import sys
 import os
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 from pathlib import Path
 import shutil
-from abc import ABC, abstractmethod
+from abc import ABC
 
 RESERVED_KEYWORDS = [
     "πρόγραμμα", "δήλωση", "εάν", "τότε", "αλλιώς",
@@ -49,7 +53,7 @@ BY_REFERENCE_OPERATOR = "%"
 TEMP_COUNTER = 0
 
 SYMBOL_TABLE_START = 12 # in bytes
-NESTING_LEVEL = -1    # at the start, incr to zero
+NESTING_LEVEL = -1    # at start, incr to zero
 
 class Token:
 
@@ -214,7 +218,6 @@ class Parser:
         token = self.get_token()
         self.program()
 
-    # add and delete program scope
     def program(self) -> None:
         global token
         if token.recognized_string == "πρόγραμμα":
@@ -271,7 +274,7 @@ class Parser:
             self.__manage_varlist(caller, id_name, function_name)
             token = self.get_token()
 
-            # repeat yourself in here
+            # repeat yourself in here, refactor
             while token.recognized_string == ",":
                 token = self.get_token()
                 if token.family == "identifier":
@@ -321,7 +324,6 @@ class Parser:
         else:
             self.__error("SyntaxError", f"Function should be named after an identifier, instead got {token.recognized_string}")
 
-    # fill symbol table code
     def proc(self) -> None:
         global token
         if token.family == "identifier":
@@ -364,7 +366,6 @@ class Parser:
             self.subprograms()
             if token.recognized_string == "αρχή_συνάρτησης":
 
-                # code for the beginning of the function block
                 self.quad_ops.gen_quad("begin_block", function_name, "_", "_")
                 starting_quad = self.quad_ops.next_quad()   # first executable command
 
@@ -374,10 +375,8 @@ class Parser:
                     self.quad_ops.gen_quad("end_block", function_name, "_", "_")
                     token = self.get_token()
 
-                    # probably
                     framelength = self.symbol_table.scope_list[-1].offset
 
-                    # all info is available, fill missing 
                     function, _ = self.symbol_table.search_entity(function_name)
                     function.starting_quad = starting_quad
                     function.frame_length = framelength
@@ -402,7 +401,6 @@ class Parser:
             self.subprograms()
             if token.recognized_string == "αρχή_διαδικασίας":
 
-                # code for the beginning of the procedure block
                 self.quad_ops.gen_quad("begin_block", procedure_name, "_", "_")
                 starting_quad = self.quad_ops.next_quad()   # first executable command
 
@@ -412,11 +410,9 @@ class Parser:
 
                     self.quad_ops.gen_quad("end_block", procedure_name, "_", "_")
 
-                    # probably?
-                    framelength = self.parser.symbol_table.scope_list[-1].offset + 4   # to get total bytes of the current scope
+                    framelength = self.symbol_table.scope_list[-1].offset
 
-                    # all info is available, fill missing 
-                    procedure, _ = self.parser.symbol_table.search_entity(procedure_name)
+                    procedure, _ = self.symbol_table.search_entity(procedure_name)
                     procedure.starting_quad = starting_quad
                     procedure.frame_length = framelength
 
@@ -475,8 +471,7 @@ class Parser:
             token = self.get_token()
             self.call_stat()
         else:
-            # error or nothing?
-            return
+            self.__error("SyntaxError", "Invalid statement")
 
 
     def assignment_stat(self, id_name) -> None:
@@ -554,7 +549,6 @@ class Parser:
         else:
             self.__error("SyntaxError", f"Expeted 'μέχρι', instead got {token.recognized_string}")
 
-    # needs two jumps to work perfectly, fix it
     def for_stat(self) -> None:
         global token
         if token.family == "identifier":
@@ -796,7 +790,6 @@ class Parser:
 
     def expression(self) -> str:
         global token
-        # add it?
         opt_sign = self.optional_sign()
         if opt_sign == "+" or opt_sign == '':
             term_1_place = self.term()
@@ -805,7 +798,6 @@ class Parser:
             w = self.quad_ops.new_temp()
             self.quad_ops.gen_quad(opt_sign, "0", value, w)
             term_1_place = w
-        #term_1_place = opt_sign + self.term()
         while token.family == "addOper":
             add_oper_symbol = self.add_oper()
             term_2_place = self.term()
@@ -866,7 +858,6 @@ class Parser:
             # not certain if it should return, might get none if identifier and not function
             factor_place, type = self.idtail(id_name)
 
-            # place it into symbol table?
             if type == "function":
                 w = self.quad_ops.new_temp()
 
@@ -934,7 +925,8 @@ class Parser:
         self.quads.close()
         self.tokens.close()
         self.table.close()
-        exit(1)
+        self.final.close()
+        return 1
 
     def __write_to_sym_file(self):
         write_values = self.symbol_table.print_table()
@@ -991,15 +983,6 @@ class QuadList:
         self.program_list: List[Quad] = []
         self.quad_counter: int = 0
 
-    # new version is better
-    '''
-    def back_patch(self, list:List[str], label: str):
-        for quad in self.program_list:
-            for quad_label in list:
-                if quad.label == quad_label:
-                    quad.op3 = label
-    '''
-
     def back_patch(self, list: List[str], label: str) -> None:
         for quad_label in list:
             self.program_list[int(quad_label)-1].op3 = label
@@ -1010,9 +993,7 @@ class QuadList:
         self.program_list.append(generated_quad)
         return generated_quad
 
-    # needs fixing
     def next_quad(self) -> str:
-        #self.quad_counter += 1
         return f"{self.quad_counter+1}"
 
     def empty_list(self) -> List[str]:
@@ -1123,17 +1104,14 @@ class Table():
         accumulator = ''
         while current_level >= 0:
             header = f'Level {current_level}\n'
-            print(header)
             accumulator += header
             for entity in self.scope_list[current_level].entity_list:
                 body = f'\t{entity}'
-                print(body)
                 accumulator += body
             current_level -= 1
         
         return accumulator
 
-    # might need some changes
     def add_scope(self) -> None:
         global NESTING_LEVEL
         NESTING_LEVEL += 1
@@ -1154,17 +1132,6 @@ class Table():
     def add_argument(self, entity: Entity, argument: FormalParameter):
         #self.scope_list[-1].entity_list[-1].arguments.append(argument)
         entity.arguments.append(argument)
-
-    ''' 
-    def search_entity(self, name: str) -> Entity:
-        current_level: int = NESTING_LEVEL
-        while current_level != -1:
-            scope = self.scope_list[current_level]
-            for entity in scope.entity_list:
-                if entity.name == name:
-                    return entity
-            current_level -= 1
-    '''
 
     def search_entity(self, name: str) -> Tuple[Entity, int]:
         levels_up: int = 0
@@ -1376,8 +1343,7 @@ class Assembler():
 #Usage: type in terminal python3 compiler.py your_file_name
 if __name__ == "__main__":
 
-    file = "test/simple.gpp"
-    #file = sys.argv[1]
+    file = sys.argv[1]
     lex: Lex = Lex(file)
     parser: Parser = Parser(lex)
     parser.syntax_analyzer()    
