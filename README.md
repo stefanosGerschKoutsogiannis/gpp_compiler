@@ -6,7 +6,7 @@ GPP is a compiler developed for the **Compilers** course of the **Computer Scien
 
 - Parses a custom educational programming language  
 - Performs lexical, syntax, and semantic analysis  
-- Generates **RISC-V assembly code**  
+- Generates **RISC-V assembly code**  (not implemented)
 - Written in **Python** for simplicity and extensibility  
 
 ## Installation
