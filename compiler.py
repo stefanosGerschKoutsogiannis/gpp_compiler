@@ -1,6 +1,3 @@
-#Stefanos Gersch-Koutsogiannis 5046
-#Filippos Alexiou 5146
-
 # IMPORTANT, PLEASE READ ME, IT ONLY TAKES ONE MINUTE
 # note: sometimes read(char) works unexpectedly when moving file descriptor pointer back
 # to avoid it, add spaces between all characters(safe option)
